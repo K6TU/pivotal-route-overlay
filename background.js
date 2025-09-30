@@ -7,6 +7,49 @@ let port=null;
 chrome.runtime.onStartup.addListener(()=>{ console.log('[PRO][bg] startup'); });
 chrome.runtime.onInstalled.addListener(()=>{ console.log('[PRO][bg] installed'); });
 
+// Automatic NASR data check/fetch on extension load
+async function autoCheckNASR() {
+  try {
+    const stored = await chrome.storage.local.get(['PRO_META']);
+    let cachedCycle = stored.PRO_META && stored.PRO_META.cycleKey;
+    let cachedDate = stored.PRO_META && stored.PRO_META.fetchedAt;
+    let needsFetch = false;
+    let currentCycle = null;
+    try {
+      const { cycleKey } = await discoverCycle();
+      currentCycle = cycleKey;
+      if (!cachedCycle || cachedCycle !== currentCycle) {
+        needsFetch = true;
+      }
+    } catch (e) {
+      LOG('Failed to discover current cycle:', e);
+      // If can't discover, force fetch if no cache
+      if (!cachedCycle) needsFetch = true;
+    }
+    if (needsFetch) {
+      LOG('Fetching NASR data: cache missing or outdated');
+      await fetchAndPersistCycle();
+    } else {
+      LOG('NASR cache is up to date:', cachedCycle);
+    }
+    // Always post status to UI
+    const meta = await chrome.storage.local.get(['PRO_META']);
+    // Dynamically import version
+    let version = 'unknown';
+    try {
+      const vmod = await import(chrome.runtime.getURL('version.js'));
+      version = vmod.PRO_VERSION;
+    } catch (e) { LOG('Failed to load version.js:', e); }
+    post({ phase: 'nasr_status', version, cycleKey: meta.PRO_META && meta.PRO_META.cycleKey, fetchedAt: meta.PRO_META && meta.PRO_META.fetchedAt });
+  } catch (e) {
+    LOG('NASR auto-check failed:', e);
+    post({ phase: 'error', error: String(e && e.message || e) });
+  }
+}
+
+chrome.runtime.onStartup.addListener(autoCheckNASR);
+chrome.runtime.onInstalled.addListener(autoCheckNASR);
+
 
 chrome.runtime.onConnect.addListener(p=>{
   if(p.name==='PRO_FAA_DIRECT'){

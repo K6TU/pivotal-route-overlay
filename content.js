@@ -60,7 +60,15 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
 // content.js — PRO v5.8.3
 (function(){
   const log=(...a)=>console.log('[PRO][content]',...a);
-  log('Sidebar injected (v5.8.7)');
+  // Dynamically import version using async IIFE
+  (async () => {
+    let proVersion = 'unknown';
+    try {
+      const vmod = await import(chrome.runtime.getURL('version.js'));
+      proVersion = vmod.PRO_VERSION;
+    } catch (e) { log('Failed to load version.js:', e); }
+    log(`Sidebar injected (v${proVersion})`);
+  })();
   const s=document.createElement('script'); s.src=chrome.runtime.getURL('injected.js'); (document.head||document.documentElement).appendChild(s); s.onload=()=>s.remove();
 
   const box=document.createElement('div');
@@ -86,7 +94,15 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
   const setStatus=t=>{ logEl.textContent+=t+'\n'; logEl.scrollTop=logEl.scrollHeight; };
 
   const port=chrome.runtime.connect({name:'PRO_FAA_DIRECT'});
-  port.onMessage.addListener(m=>{ if(m&&m.phase){ setStatus(m.phase); } });
+    port.onMessage.addListener(m=>{
+      if(m && m.phase === 'nasr_status') {
+        // Display extension version and NASR data date
+        const dateStr = m.fetchedAt ? (new Date(m.fetchedAt)).toLocaleDateString() : 'unknown';
+        setStatus(`PRO v${m.version} | NASR cycle: ${m.cycleKey || 'unknown'} | Data date: ${dateStr}`);
+      } else if(m && m.phase) {
+        setStatus(m.phase);
+      }
+    });
   log('Connected to background');
 
   // Cold-start hydration: show cache status and avoid unnecessary fetches
