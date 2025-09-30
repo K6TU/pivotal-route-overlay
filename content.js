@@ -1,3 +1,20 @@
+  // Map area boundaries lookup
+  const MAP_AREAS = {
+    'Continental US': { latMax: 59, latMin: 21, lonMin: -129, lonMax: -64.1 },
+    'Northwest US': { latMax: 53, latMin: 40, lonMin: -133.11, lonMax: -110.9 },
+    'Southwest US': { latMax: 43.25, latMin: 30.38, lonMin: -132.01, lonMax: -110 },
+    'Northern Rockies': { latMax: 50, latMin: 39, lonMin: -119.8, lonMax: -110 },
+    'Four Corners': { latMax: 42.25, latMin: 31.25, lonMin: -118.4, lonMax: -99.6 },
+    'North Central US': { latMax: 51, latMin: 39.81, lonMin: -108.55, lonMax: -89.44 },
+    'Central US': { latMax: 43.8, latMin: 32.3, lonMin: -108.64, lonMax: -89 },
+    'South Central US': { latMax: 38.25, latMin: 25.75, lonMin: -108, lonMax: -86.6 },
+    'Midwest US': { latMax: 47.5, latMin: 36.5, lonMin: -98.8, lonMax: -80 },
+    'Ohio Valley': { latMax: 42.5, latMin: 31.5, lonMin: -96.7, lonMax: -77.9 },
+    'Southeast US': { latMax: 36, latMin: 24.3, lonMin: -95, lonMax: -75 },
+    'Northeast US': { latMax: 47.6, latMin: 37, lonMin: -84.92, lonMax: -66.8 },
+    'Mid-Atlantic': { latMax: 43.5, latMin: 31.5, lonMin: -89.5, lonMax: -69 }
+  };
+
 async function waitFor(test, timeout=8000, step=50){const t0=Date.now();while(Date.now()-t0<timeout){try{if(await test())return true;}catch(e){}await new Promise(r=>setTimeout(r,step));}throw new Error('timeout');}
 async function drawRouteFromString(routeStr, color, width, phase='manual'){
   try{
@@ -80,10 +97,21 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
   const box=document.createElement('div');
   box.id='pro-overlay-ui';
   box.style.cssText='position:fixed;top:10px;right:10px;z-index:2147483000;background:#0b0b0c;color:#e6e6e6;padding:12px;border-radius:10px;box-shadow:0 8px 22px rgba(0,0,0,.45);width:330px;font:13px/1.45 system-ui,Segoe UI,Roboto,Arial';
+  // Extract map area text from #zoom_menu_link
+  let mapArea = '';
+  const zoomMenu = document.getElementById('zoom_menu_link');
+  if (zoomMenu && zoomMenu.textContent) {
+    mapArea = zoomMenu.textContent.trim();
+  }
+
   box.innerHTML=''
    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'
    +  '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#000;border:1px solid #bbb"></span>'
    +  '<b style="font-size:14px">PRO Overlay</b>'
+   +'</div>'
+   +'<div style="margin-bottom:10px;">'
+   +  '<label style="display:block;margin-bottom:4px">Map Area</label>'
+   +  `<input id="pro-map-area" value="${mapArea}" readonly style="width:100%;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#222;color:#fff;font-weight:600">`
    +'</div>'
    +'<div style="display:grid;gap:10px">'
    +  '<div><label style="display:block;margin-bottom:4px">Route</label><input id="pro-route" placeholder="KHWD KDVT" style="width:100%;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#111;color:#fff"></div>'
@@ -231,8 +259,84 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
     return { waypoints:wps, latlngs };
   }
 
+  // Cohen–Sutherland clipping codes
+  function getClipCode(lat, lon, bounds) {
+    let code = 0;
+    if (lat > bounds.latMax) code |= 1; // above
+    if (lat < bounds.latMin) code |= 2; // below
+    if (lon < bounds.lonMin) code |= 4; // left
+    if (lon > bounds.lonMax) code |= 8; // right
+    return code;
+  }
+
+  // Clip a line segment to bounds, returns [p1, p2] or null if not visible
+  function clipSegment(p1, p2, bounds) {
+    let [lat1, lon1] = p1;
+    let [lat2, lon2] = p2;
+    let code1 = getClipCode(lat1, lon1, bounds);
+    let code2 = getClipCode(lat2, lon2, bounds);
+    while (true) {
+      if (!(code1 | code2)) {
+        return [[lat1, lon1], [lat2, lon2]]; // both inside
+      } else if (code1 & code2) {
+        return null; // both outside, same region
+      } else {
+        let codeOut = code1 ? code1 : code2;
+        let lat, lon;
+        if (codeOut & 1) { // above
+          lat = bounds.latMax;
+          lon = lon1 + (lon2 - lon1) * (bounds.latMax - lat1) / (lat2 - lat1);
+        } else if (codeOut & 2) { // below
+          lat = bounds.latMin;
+          lon = lon1 + (lon2 - lon1) * (bounds.latMin - lat1) / (lat2 - lat1);
+        } else if (codeOut & 4) { // left
+          lon = bounds.lonMin;
+          lat = lat1 + (lat2 - lat1) * (bounds.lonMin - lon1) / (lon2 - lon1);
+        } else if (codeOut & 8) { // right
+          lon = bounds.lonMax;
+          lat = lat1 + (lat2 - lat1) * (bounds.lonMax - lon1) / (lon2 - lon1);
+        }
+        if (codeOut === code1) {
+          lat1 = lat; lon1 = lon; code1 = getClipCode(lat1, lon1, bounds);
+        } else {
+          lat2 = lat; lon2 = lon; code2 = getClipCode(lat2, lon2, bounds);
+        }
+      }
+    }
+  }
+
   function drawRoute(parsed,opts){
-    const detail={ latlngs:parsed.latlngs, color:(opts&&opts.color)||'#ff0000', width:(opts&&opts.width)||3 };
+    let mapAreaName = (document.getElementById('pro-map-area')||{}).value || 'Continental US';
+    mapAreaName = mapAreaName.trim();
+    console.log('[PRO][route] MAP_AREAS keys:', Object.keys(MAP_AREAS));
+    if (!MAP_AREAS[mapAreaName]) {
+      console.warn('[PRO][route] Map area name not found in MAP_AREAS:', mapAreaName, 'Using CONUS bounds.');
+    } else {
+      console.log('[PRO][route] Using map area:', mapAreaName);
+    }
+    const bounds = MAP_AREAS[mapAreaName] || MAP_AREAS['Continental US'];
+    // Log map name and boundaries before clipping
+    console.log(`[PRO][route] drawRoute: mapAreaName="${mapAreaName}", bounds= latMax=${bounds.latMax}, latMin=${bounds.latMin}, lonMin=${bounds.lonMin}, lonMax=${bounds.lonMax}`);
+    // Clip each segment to bounds
+    const clippedLatLngs = [];
+    for (let i = 0; i < parsed.latlngs.length - 1; i++) {
+      const seg = clipSegment(parsed.latlngs[i], parsed.latlngs[i+1], bounds);
+      if (seg) {
+        // Add clipped segment as two points
+        if (clippedLatLngs.length === 0 ||
+            clippedLatLngs[clippedLatLngs.length-1][0] !== seg[0][0] ||
+            clippedLatLngs[clippedLatLngs.length-1][1] !== seg[0][1]) {
+          clippedLatLngs.push(seg[0]);
+        }
+        clippedLatLngs.push(seg[1]);
+      }
+    }
+    const detail={
+      latlngs:clippedLatLngs,
+      color:(opts&&opts.color)||'#ff0000',
+      width:(opts&&opts.width)||3,
+      bounds: bounds
+    };
     window.dispatchEvent(new CustomEvent('PRO_DRAW_ROUTE',{detail}));
   }
   function clear(){ window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE')); }

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Pivotal Route Overlay (PRO)",
-  "version": "5.8.9",
+  "version": "5.9.0",
   "description": "Overlay parsed flight routes on Pivotal Weather maps. Fetch FAA NASR and draw routes.",
   "permissions": [
     "activeTab",

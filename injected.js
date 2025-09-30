@@ -76,17 +76,25 @@
     ctx.setLineDash([]); // SOLID
     ctx.lineJoin='round'; ctx.lineCap='round'; ctx.beginPath();
     const ll=state.last.latlngs;
+    // Use bounds from event detail if present
+    const bounds = state.last.bounds && typeof state.last.bounds === 'object' ? state.last.bounds : BOUNDS;
+    console.log('[PRO][draw] Received bounds:', state.last.bounds);
+    console.log(`[PRO][draw] Map bounds: latMax=${bounds.latMax}, latMin=${bounds.latMin}, lonMin=${bounds.lonMin}, lonMax=${bounds.lonMax}`);
+    if (r) {
+      console.log(`[PRO][draw] Canvas rect: x=${r.x}, y=${r.y}, w=${r.w}, h=${r.h}`);
+    }
     for(let i=0;i<ll.length;i++){
       const lat=ll[i][0], lon=ll[i][1];
-      const x=((lon-BOUNDS.lonMin)/(BOUNDS.lonMax-BOUNDS.lonMin))*r.w;
-      const y=((BOUNDS.latMax-lat)/(BOUNDS.latMax-BOUNDS.latMin))*r.h;
+      const x=((lon-bounds.lonMin)/(bounds.lonMax-bounds.lonMin))*r.w;
+      const y=((bounds.latMax-lat)/(bounds.latMax-bounds.latMin))*r.h;
+      console.log(`[PRO][draw] Point ${i}: lat=${lat}, lon=${lon}, px=(${x},${y})`);
       if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
     }
     ctx.stroke();
   }
   function handleDraw(detail){
     if(!detail||!Array.isArray(detail.latlngs)||detail.latlngs.length<2) return;
-    state.last={latlngs:detail.latlngs, color:detail.color, width:detail.width};
+  state.last={latlngs:detail.latlngs, color:detail.color, width:detail.width, bounds: detail.bounds};
     redraw();
   }
   window.addEventListener('PRO_DRAW_ROUTE', ev=>{ try{ handleDraw(ev.detail||{});}catch(e){console.warn(e);} });
