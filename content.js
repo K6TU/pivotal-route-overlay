@@ -60,15 +60,21 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
 // content.js — PRO v5.8.3
 (function(){
   const log=(...a)=>console.log('[PRO][content]',...a);
-  // Dynamically import version using async IIFE
-  (async () => {
+  // Dynamically import version after dialog creation
+  const logVersionToStatus = async () => {
     let proVersion = 'unknown';
     try {
       const vmod = await import(chrome.runtime.getURL('version.js'));
       proVersion = vmod.PRO_VERSION;
     } catch (e) { log('Failed to load version.js:', e); }
     log(`Sidebar injected (v${proVersion})`);
-  })();
+    const logEl = document.getElementById('pro-log');
+    if (logEl) {
+      logEl.textContent += `PRO version: v${proVersion}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  };
+
   const s=document.createElement('script'); s.src=chrome.runtime.getURL('injected.js'); (document.head||document.documentElement).appendChild(s); s.onload=()=>s.remove();
 
   const box=document.createElement('div');
@@ -80,7 +86,6 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
    +  '<b style="font-size:14px">PRO Overlay</b>'
    +'</div>'
    +'<div style="display:grid;gap:10px">'
-   +  '<button id="pro-update" style="padding:9px 12px;background:#0a84ff;border:0;color:#fff;border-radius:7px;font-weight:600;cursor:pointer">Update NASR</button>'
    +  '<div><label style="display:block;margin-bottom:4px">Route</label><input id="pro-route" placeholder="KHWD KDVT" style="width:100%;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#111;color:#fff"></div>'
    +  '<div style="display:flex;gap:10px;"><div style="flex:1"><label style="display:block;margin-bottom:4px">Width</label><input id="pro-width" type="number" min="1" max="12" value="3" style="width:100%;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#111;color:#fff"></div>'
    +  '<div style="flex:1"><label style="display:block;margin-bottom:4px">Color</label><input id="pro-color" type="color" value="#ff0000" style="width:100%;height:36px;padding:0;border-radius:7px;border:1px solid #333;background:#111;color:#fff"></div></div>'
@@ -89,6 +94,9 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
    +  '<pre id="pro-log" style="white-space:pre-wrap;background:#0a0a0a;padding:8px;border-radius:7px;border:1px solid #222;max-height:220px;overflow:auto;margin:0"></pre>'
    +'</div>';
   document.body.appendChild(box);
+
+  // Now log the version to the status area
+  logVersionToStatus();
 
   const logEl=box.querySelector('#pro-log');
   const setStatus=t=>{ logEl.textContent+=t+'\n'; logEl.scrollTop=logEl.scrollHeight; };
@@ -112,7 +120,12 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
       if (PRO_META && PRO_AIRPORT_INDEX && Object.keys(PRO_AIRPORT_INDEX).length) {
         setStatus(`Cache: cycle ${PRO_META.cycleKey} | APT ${Object.keys(PRO_AIRPORT_INDEX).length} | NAV ${Object.keys(PRO_NAV_INDEX||{}).length} | FIX ${Object.keys(PRO_FIX_INDEX||{}).length}`);
       } else {
-        setStatus('Cache: empty — click "Update NASR" first.');
+        setStatus('Cache: empty. Fetching NASR datasets...');
+        try {
+          port.postMessage({cmd:'FETCH_CURRENT_CYCLE'});
+        } catch(e) {
+          setStatus('Error requesting NASR fetch: ' + (e.message||e));
+        }
       }
     } catch (e) {
       setStatus('Cache check failed: ' + (e.message||e));
@@ -224,10 +237,6 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
   }
   function clear(){ window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE')); }
 
-  box.querySelector('#pro-update').onclick=()=>{
-    setStatus('Checking FAA NASR…');
-    try{ port.postMessage({cmd:'FETCH_CURRENT_CYCLE'}); }catch(e){ setStatus('error '+e); }
-  };
   box.querySelector('#pro-clear').onclick=()=>clear();
   box.querySelector('#pro-draw').onclick=async()=>{
     try{
