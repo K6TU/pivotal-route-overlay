@@ -1,0 +1,36 @@
+Pivotal-Route-Overlay (PRO)
+
+PRO is an extension compatible with Chrome based broswers (including Brave) that will draw
+a flight plan route on a Pivotal Weather (www.pivotalweather.com) weather map.
+
+The extension is automatically loaded when a weather map is loaded from the site
+and displays a control dialog at the top right of the loaded page.
+
+The dialog has controls to:
+
+Update NASR - forces a download of the Current FAA 28 Day NASR subscription data which
+provides datasets for Airports, Navaids and Waypoints.
+
+Parse & Draw - after the NASR data has been loaded, a route may be entered using airport
+identifiers, VORs or Waypoint names.  Clicking Parse & Draw will decode the route, map
+the identifiers to geo-coordinates and then draws a line over the map.
+
+Controls are provided to select the color (Red by default) and width (3 px by default)
+of the line drawn.
+
+
+Both the route and NASR data are cached by the extension.
+
+The extension will re-draw a previously entered route on each page reload action.  This 
+enables the line to be drawn over animated image loops.
+
+Enhancements planned:
+- Automatic detection and load of updates to NASR data
+- Detection and handling of other map constraints beyond just CONUS
+
+
+Disclaimer:  This extension is written and enhanced by ChatGPT and the tested by human.
+It may contain errors.  Use at your own risk - this extension is for educational use
+only and should not be used for Flight Planning or weather briefing.
+
+
