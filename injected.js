@@ -58,9 +58,9 @@
     if(state.overlay && document.body.contains(state.overlay)) return state.overlay;
     const cv=document.createElement('canvas');
     cv.id='pro_route_canvas';
-    cv.style.position='absolute';
-    cv.style.pointerEvents='none';
-    cv.style.zIndex=2147483647;
+  cv.style.position='absolute';
+  cv.style.pointerEvents='none';
+  cv.style.zIndex=1;
     document.body.appendChild(cv);
     state.overlay=cv; state.ctx=cv.getContext('2d');
     return cv;
@@ -91,10 +91,29 @@
       if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
     }
     ctx.stroke();
+
+    // Draw triangles at hour marks
+    if (Array.isArray(state.last.triangles) && state.last.triangles.length > 0) {
+      ctx.fillStyle = state.last.color || '#ff0000';
+      const size = Math.max(8, state.last.width * 3); // triangle size in px
+      for (let i = 0; i < state.last.triangles.length; i++) {
+        const [lat, lon] = state.last.triangles[i];
+        const x = ((lon-bounds.lonMin)/(bounds.lonMax-bounds.lonMin))*r.w;
+        const y = ((bounds.latMax-lat)/(bounds.latMax-bounds.latMin))*r.h;
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(x, y-size/2);
+        ctx.lineTo(x-size/2, y+size/2);
+        ctx.lineTo(x+size/2, y+size/2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+    }
   }
   function handleDraw(detail){
     if(!detail||!Array.isArray(detail.latlngs)||detail.latlngs.length<2) return;
-  state.last={latlngs:detail.latlngs, color:detail.color, width:detail.width, bounds: detail.bounds};
+  state.last={latlngs:detail.latlngs, color:detail.color, width:detail.width, bounds: detail.bounds, triangles: detail.triangles};
     redraw();
   }
   window.addEventListener('PRO_DRAW_ROUTE', ev=>{ try{ handleDraw(ev.detail||{});}catch(e){console.warn(e);} });

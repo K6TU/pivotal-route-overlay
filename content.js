@@ -113,6 +113,10 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
    +  '<label style="display:block;margin-bottom:4px">Map Area</label>'
    +  `<input id="pro-map-area" value="${mapArea}" readonly style="width:100%;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#222;color:#fff;font-weight:600">`
    +'</div>'
+   +'<div style="margin-bottom:10px;">'
+   +  '<label style="display:block;margin-bottom:4px">Airspeed (knots)</label>'
+   +  '<input id="pro-airspeed" type="number" min="1" max="999" value="310" style="width:100%;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#222;color:#fff;font-weight:600">'
+   +'</div>'
    +'<div style="display:grid;gap:10px">'
    +  '<div><label style="display:block;margin-bottom:4px">Route</label><input id="pro-route" placeholder="KHWD KDVT" style="width:100%;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#111;color:#fff"></div>'
    +  '<div style="display:flex;gap:10px;"><div style="flex:1"><label style="display:block;margin-bottom:4px">Width</label><input id="pro-width" type="number" min="1" max="12" value="3" style="width:100%;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#111;color:#fff"></div>'
@@ -305,6 +309,16 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
     }
   }
 
+  // Helper: Haversine distance in NM
+  function haversineNM(lat1, lon1, lat2, lon2) {
+    const toRad = x => x * Math.PI / 180;
+    const R = 3440.065; // nautical miles
+    const dLat = toRad(lat2-lat1);
+    const dLon = toRad(lon2-lon1);
+    const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+
   function drawRoute(parsed,opts){
     let mapAreaName = (document.getElementById('pro-map-area')||{}).value || 'Continental US';
     mapAreaName = mapAreaName.trim();
@@ -322,7 +336,6 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
     for (let i = 0; i < parsed.latlngs.length - 1; i++) {
       const seg = clipSegment(parsed.latlngs[i], parsed.latlngs[i+1], bounds);
       if (seg) {
-        // Add clipped segment as two points
         if (clippedLatLngs.length === 0 ||
             clippedLatLngs[clippedLatLngs.length-1][0] !== seg[0][0] ||
             clippedLatLngs[clippedLatLngs.length-1][1] !== seg[0][1]) {
@@ -331,11 +344,32 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
         clippedLatLngs.push(seg[1]);
       }
     }
+
+    // Calculate hour marks for triangles
+    const airspeed = parseFloat(document.getElementById('pro-airspeed')?.value) || 310;
+    const hourDist = airspeed; // nautical miles in one hour
+    // Compute cumulative distances along the route
+    let cumDist = 0, last = clippedLatLngs[0], marks = [], nextMark = hourDist;
+    for (let i = 1; i < clippedLatLngs.length; i++) {
+      const curr = clippedLatLngs[i];
+      const segDist = haversineNM(last[0], last[1], curr[0], curr[1]);
+      while (cumDist + segDist >= nextMark) {
+        const frac = (nextMark - cumDist) / segDist;
+        const lat = last[0] + frac * (curr[0] - last[0]);
+        const lon = last[1] + frac * (curr[1] - last[1]);
+        marks.push([lat, lon]);
+        nextMark += hourDist;
+      }
+      cumDist += segDist;
+      last = curr;
+    }
+    // Only draw triangles if at least one hour mark exists
     const detail={
       latlngs:clippedLatLngs,
       color:(opts&&opts.color)||'#ff0000',
       width:(opts&&opts.width)||3,
-      bounds: bounds
+      bounds: bounds,
+      triangles: marks
     };
     window.dispatchEvent(new CustomEvent('PRO_DRAW_ROUTE',{detail}));
   }
