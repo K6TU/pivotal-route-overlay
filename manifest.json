@@ -12,7 +12,7 @@
   "host_permissions": [
     "https://www.faa.gov/*",
     "https://nfdc.faa.gov/*",
-    "https://*.pivotalweather.com/*",
+    "https://*.pivotalweather.com/models.php*",
     "https://*.pivotalweather.net/*"
   ],
   "background": {

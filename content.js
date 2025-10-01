@@ -84,19 +84,16 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
       const vmod = await import(chrome.runtime.getURL('version.js'));
       proVersion = vmod.PRO_VERSION;
     } catch (e) { log('Failed to load version.js:', e); }
-    log(`Sidebar injected (v${proVersion})`);
-    const logEl = document.getElementById('pro-log');
-    if (logEl) {
-      logEl.textContent += `PRO version: v${proVersion}\n`;
-      logEl.scrollTop = logEl.scrollHeight;
-    }
+    // Update toolbar title with version
+    const titleEl = document.getElementById('pro-overlay-title');
+    if (titleEl) titleEl.textContent = `PRO Overlay v${proVersion}`;
   };
 
   const s=document.createElement('script'); s.src=chrome.runtime.getURL('injected.js'); (document.head||document.documentElement).appendChild(s); s.onload=()=>s.remove();
 
   const box=document.createElement('div');
   box.id='pro-overlay-ui';
-  box.style.cssText='position:fixed;top:10px;right:10px;z-index:2147483000;background:#0b0b0c;color:#e6e6e6;padding:12px;border-radius:10px;box-shadow:0 8px 22px rgba(0,0,0,.45);width:330px;font:13px/1.45 system-ui,Segoe UI,Roboto,Arial';
+  box.style.cssText='position:fixed;top:10px;right:10px;z-index:2147483000;background:#0b0b0c;color:#e6e6e6;padding:12px;border-radius:10px;box-shadow:0 8px 22px rgba(0,0,0,.45);width:330px;font:13px/1.45 system-ui,Segoe UI,Roboto,Arial;user-select:none;';
   // Extract map area text from #zoom_menu_link
   let mapArea = '';
   const zoomMenu = document.getElementById('zoom_menu_link');
@@ -105,10 +102,13 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
   }
 
   box.innerHTML=''
-   +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'
-   +  '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#000;border:1px solid #bbb"></span>'
-   +  '<b style="font-size:14px">PRO Overlay</b>'
-   +'</div>'
+  +'<div id="pro-overlay-header" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;cursor:move;-webkit-app-region:drag;">'
+  +  '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#000;border:1px solid #bbb"></span>'
+  +  '<b id="pro-overlay-title" style="font-size:14px">PRO Overlay</b>'
+  +  '<label style="margin-left:auto;display:flex;align-items:center;gap:4px;font-size:12px;user-select:none;">'
+  +    '<input type="checkbox" id="pro-debug" style="margin:0;"> Debug'
+  +  '</label>'
+  +'</div>'
    +'<div style="margin-bottom:10px;">'
    +  '<label style="display:block;margin-bottom:4px">Map Area</label>'
    +  `<input id="pro-map-area" value="${mapArea}" readonly style="width:100%;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#222;color:#fff;font-weight:600">`
@@ -121,17 +121,70 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
    +  '<div><label style="display:block;margin-bottom:4px">Route</label><input id="pro-route" placeholder="KHWD KDVT" style="width:100%;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#111;color:#fff"></div>'
    +  '<div style="display:flex;gap:10px;"><div style="flex:1"><label style="display:block;margin-bottom:4px">Width</label><input id="pro-width" type="number" min="1" max="12" value="3" style="width:100%;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#111;color:#fff"></div>'
    +  '<div style="flex:1"><label style="display:block;margin-bottom:4px">Color</label><input id="pro-color" type="color" value="#ff0000" style="width:100%;height:36px;padding:0;border-radius:7px;border:1px solid #333;background:#111;color:#fff"></div></div>'
-   +  '<div style="display:flex;gap:10px;"><button id="pro-draw" style="flex:1;padding:9px 12px;background:#2ecc71;border:0;color:#000;font-weight:700;border-radius:7px;cursor:pointer">Parse & Draw</button>'
+  +  '<div style="display:flex;gap:10px;"><button id="pro-draw" disabled style="flex:1;padding:9px 12px;background:#2ecc71;border:0;color:#000;font-weight:700;border-radius:7px;cursor:pointer;opacity:0.6">Parse & Draw</button>'
    +  '<button id="pro-clear" style="flex:1;padding:9px 12px;background:#444;border:0;color:#fff;border-radius:7px;cursor:pointer">Clear</button></div>'
    +  '<pre id="pro-log" style="white-space:pre-wrap;background:#0a0a0a;padding:8px;border-radius:7px;border:1px solid #222;max-height:220px;overflow:auto;margin:0"></pre>'
    +'</div>';
   document.body.appendChild(box);
+  // Drag logic for panel (must be after box.innerHTML)
+  (function(){
+    const header = box.querySelector('#pro-overlay-header');
+    let isDragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
+    header.addEventListener('mousedown', function(e){
+      isDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      const rect = box.getBoundingClientRect();
+      startLeft = rect.left;
+      startTop = rect.top;
+      document.body.style.userSelect = 'none';
+    });
+    window.addEventListener('mousemove', function(e){
+      if(!isDragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      box.style.left = (startLeft + dx) + 'px';
+      box.style.top = (startTop + dy) + 'px';
+      box.style.right = '';
+    });
+    window.addEventListener('mouseup', function(){
+      if(isDragging){
+        isDragging = false;
+        document.body.style.userSelect = '';
+      }
+    });
+  })();
 
   // Now log the version to the status area
+  // Reference to draw button
+  const drawBtn = box.querySelector('#pro-draw');
+  // Disable draw button if not on model.php page
+  if (!/^https?:\/\/www\.pivotalweather\.com\/model\.php/.test(window.location.href)) {
+    drawBtn.disabled = true;
+    drawBtn.style.opacity = '0.6';
+  }
   logVersionToStatus();
 
   const logEl=box.querySelector('#pro-log');
-  const setStatus=t=>{ logEl.textContent+=t+'\n'; logEl.scrollTop=logEl.scrollHeight; };
+  // Debug checkbox logic
+  const debugCheckbox = box.querySelector('#pro-debug');
+  let debugEnabled = false;
+  // Load debug state from storage
+  chrome.storage.local.get(['PRO_DEBUG'], (res) => {
+    debugEnabled = !!res.PRO_DEBUG;
+    debugCheckbox.checked = debugEnabled;
+  });
+  debugCheckbox.addEventListener('change', () => {
+    debugEnabled = debugCheckbox.checked;
+    chrome.storage.local.set({ PRO_DEBUG: debugEnabled });
+  });
+  // Only log if debug is enabled
+  const setStatus = t => {
+    if (debugEnabled) {
+      logEl.textContent += t + '\n';
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  };
 
   const port=chrome.runtime.connect({name:'PRO_FAA_DIRECT'});
     port.onMessage.addListener(m=>{
@@ -139,6 +192,8 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
         // Display extension version and NASR data date
         const dateStr = m.fetchedAt ? (new Date(m.fetchedAt)).toLocaleDateString() : 'unknown';
         setStatus(`PRO v${m.version} | NASR cycle: ${m.cycleKey || 'unknown'} | Data date: ${dateStr}`);
+        // Enable draw button if NASR is ready (cycleKey and fetchedAt present)
+        if (m.cycleKey && m.fetchedAt && drawBtn) { drawBtn.disabled = false; drawBtn.style.opacity = ''; }
       } else if(m && m.phase) {
         setStatus(m.phase);
       }
@@ -151,8 +206,10 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
       const {PRO_META, PRO_AIRPORT_INDEX, PRO_NAV_INDEX, PRO_FIX_INDEX} = await chrome.storage.local.get(['PRO_META','PRO_AIRPORT_INDEX','PRO_NAV_INDEX','PRO_FIX_INDEX']);
       if (PRO_META && PRO_AIRPORT_INDEX && Object.keys(PRO_AIRPORT_INDEX).length) {
         setStatus(`Cache: cycle ${PRO_META.cycleKey} | APT ${Object.keys(PRO_AIRPORT_INDEX).length} | NAV ${Object.keys(PRO_NAV_INDEX||{}).length} | FIX ${Object.keys(PRO_FIX_INDEX||{}).length}`);
+        if(drawBtn) { drawBtn.disabled = false; drawBtn.style.opacity = ''; }
       } else {
         setStatus('Cache: empty. Fetching NASR datasets...');
+        if(drawBtn) { drawBtn.disabled = true; drawBtn.style.opacity = '0.6'; }
         try {
           port.postMessage({cmd:'FETCH_CURRENT_CYCLE'});
         } catch(e) {
@@ -161,11 +218,13 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
       }
     } catch (e) {
       setStatus('Cache check failed: ' + (e.message||e));
+      if(drawBtn) { drawBtn.disabled = true; drawBtn.style.opacity = '0.6'; }
     }
   
   // Auto-redraw persisted route on reload (after DOM & indices ready)
   (async () => {
-    const cached = await loadLastRoute(); console.log('[PRO][content] auto-redraw cached =', cached);
+      if (/^https?:\/\/www\.pivotalweather\.com\/model\.php/.test(window.location.href)) {
+        const cached = await loadLastRoute(); console.log('[PRO][content] auto-redraw cached =', cached);
     if(!cached) return;
     const setInput = (id,val) => { const el = document.getElementById(id); if(el) el.value = val; };
     setInput('pro-route', cached.route);
@@ -187,6 +246,7 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
       console.log('[PRO][content] restoring route now ->', cached);
       await drawRouteFromString(cached.route, cached.color||'#ff0000', cached.width||3, 'restore');
     } catch(e){ console.warn('[PRO][content] restore failed', e); if (typeof setStatus==='function') setStatus('Route restore failed: '+(e.message||e)); }
+        }
   
   // Listen for injected ACKs and persist on success (belt & suspenders)
   window.addEventListener('message', async (ev)=>{
