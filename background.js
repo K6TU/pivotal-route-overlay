@@ -240,7 +240,12 @@ async function fetchAndPersistCycle(){
     PRO_AIRPORT_INDEX: airports,
     PRO_NAV_INDEX: navaids,
     PRO_FIX_INDEX: fixes,
-    PRO_META: { counts:{airports:Object.keys(airports).length, navaids:Object.keys(navaids).length, fixes:Object.keys(fixes).length}, cycleKey, fetchedAt: Date.now() }
+    PRO_META: {
+      counts: { airports: Object.keys(airports).length, navaids: Object.keys(navaids).length, fixes: Object.keys(fixes).length },
+      cycleKey,
+      cycleDate: cycleKey, // persist the actual cycle start date
+      fetchedAt: Date.now()
+    }
   });
   post({phase:'done', meta:{cycleKey}});
 }

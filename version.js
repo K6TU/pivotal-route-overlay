@@ -1,2 +1,2 @@
 // Central version stamp for PRO extension
-export const PRO_VERSION = '5.9.2';
+export const PRO_VERSION = '5.9.3';

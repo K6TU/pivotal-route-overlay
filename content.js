@@ -76,17 +76,19 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
 
 // content.js — PRO v5.8.3
 (function(){
-  const log=(...a)=>console.log('[PRO][content]',...a);
+  // Debug log function
+  function debugLog(...args) { if (debugEnabled) console.log(...args); }
+  const log=(...a)=>debugLog('[PRO][content]',...a);
   // Dynamically import version after dialog creation
   const logVersionToStatus = async () => {
     let proVersion = 'unknown';
     try {
       const vmod = await import(chrome.runtime.getURL('version.js'));
       proVersion = vmod.PRO_VERSION;
-    } catch (e) { log('Failed to load version.js:', e); }
+    } catch (e) { debugLog('Failed to load version.js:', e); }
     // Update toolbar title with version
     const titleEl = document.getElementById('pro-overlay-title');
-    if (titleEl) titleEl.textContent = `PRO Overlay v${proVersion}`;
+    if (titleEl) titleEl.textContent = `PRO v${proVersion}`;
   };
 
   const s=document.createElement('script'); s.src=chrome.runtime.getURL('injected.js'); (document.head||document.documentElement).appendChild(s); s.onload=()=>s.remove();
@@ -94,6 +96,16 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
   const box=document.createElement('div');
   box.id='pro-overlay-ui';
   box.style.cssText='position:fixed;top:10px;right:10px;z-index:2147483000;background:#0b0b0c;color:#e6e6e6;padding:12px;border-radius:10px;box-shadow:0 8px 22px rgba(0,0,0,.45);width:330px;font:13px/1.45 system-ui,Segoe UI,Roboto,Arial;user-select:none;';
+  // Restore sidebar location from sessionStorage if present
+  try {
+    const pos = sessionStorage.getItem('PRO_SIDEBAR_POS');
+    if (pos) {
+      const {left, top} = JSON.parse(pos);
+      box.style.left = left + 'px';
+      box.style.top = top + 'px';
+      box.style.right = '';
+    }
+  } catch(_){}
   // Extract map area text from #zoom_menu_link
   let mapArea = '';
   const zoomMenu = document.getElementById('zoom_menu_link');
@@ -104,27 +116,57 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
   box.innerHTML=''
   +'<div id="pro-overlay-header" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;cursor:move;-webkit-app-region:drag;">'
   +  '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#000;border:1px solid #bbb"></span>'
+  +  '<a href="https://tbm-ppp.org" target="_blank" rel="noopener" style="font-size:14px;text-decoration:underline;color:#6ec6ff;font-weight:bold;margin-right:6px;">TBM-PPP</a>'
   +  '<b id="pro-overlay-title" style="font-size:14px">PRO Overlay</b>'
   +  '<label style="margin-left:auto;display:flex;align-items:center;gap:4px;font-size:12px;user-select:none;">'
   +    '<input type="checkbox" id="pro-debug" style="margin:0;"> Debug'
   +  '</label>'
   +'</div>'
-   +'<div style="margin-bottom:10px;">'
-   +  '<label style="display:block;margin-bottom:4px">Map Area</label>'
-   +  `<input id="pro-map-area" value="${mapArea}" readonly style="width:100%;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#222;color:#fff;font-weight:600">`
-   +'</div>'
-   +'<div style="margin-bottom:10px;">'
-   +  '<label style="display:block;margin-bottom:4px">Airspeed (knots)</label>'
-   +  '<input id="pro-airspeed" type="number" min="1" max="999" value="310" style="width:100%;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#222;color:#fff;font-weight:600">'
-   +'</div>'
-   +'<div style="display:grid;gap:10px">'
-   +  '<div><label style="display:block;margin-bottom:4px">Route</label><input id="pro-route" placeholder="KHWD KDVT" style="width:100%;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#111;color:#fff"></div>'
-   +  '<div style="display:flex;gap:10px;"><div style="flex:1"><label style="display:block;margin-bottom:4px">Width</label><input id="pro-width" type="number" min="1" max="12" value="3" style="width:100%;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#111;color:#fff"></div>'
-   +  '<div style="flex:1"><label style="display:block;margin-bottom:4px">Color</label><input id="pro-color" type="color" value="#ff0000" style="width:100%;height:36px;padding:0;border-radius:7px;border:1px solid #333;background:#111;color:#fff"></div></div>'
-  +  '<div style="display:flex;gap:10px;"><button id="pro-draw" disabled style="flex:1;padding:9px 12px;background:#2ecc71;border:0;color:#000;font-weight:700;border-radius:7px;cursor:pointer;opacity:0.6">Parse & Draw</button>'
-   +  '<button id="pro-clear" style="flex:1;padding:9px 12px;background:#444;border:0;color:#fff;border-radius:7px;cursor:pointer">Clear</button></div>'
-   +  '<pre id="pro-log" style="white-space:pre-wrap;background:#0a0a0a;padding:8px;border-radius:7px;border:1px solid #222;max-height:220px;overflow:auto;margin:0"></pre>'
-   +'</div>';
+  +'<div style="display:flex;gap:10px;margin-bottom:10px;padding:0 8px;">'
+  +  '<div style="flex:1;min-width:0">'
+  +    '<label style="display:block;margin-bottom:4px">Map Area</label>'
+  +    `<input id="pro-map-area" value="${mapArea}" readonly style="width:100%;box-sizing:border-box;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#222;color:#fff;font-weight:600">`
+  +  '</div>'
+  +  '<div style="flex:1;min-width:0">'
+  +    '<label style="display:block;margin-bottom:4px">FAA Cycle</label>'
+  +    `<input id="pro-cycle" value="unknown" readonly style="width:100%;box-sizing:border-box;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#222;color:#6ec672;font-weight:600">`
+  +  '</div>'
+  +'</div>'
+  +'<div style="display:flex;gap:10px;padding:0 8px;margin-bottom:10px;">'
+  +  '<div style="flex:2;min-width:0">'
+  +    '<label style="display:block;margin-bottom:4px">Airspeed (knots)</label>'
+  +    '<input id="pro-airspeed" type="number" min="1" max="999" value="310" style="width:100%;box-sizing:border-box;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#222;color:#fff;font-weight:600">'
+  +  '</div>'
+  +  '<div style="flex:1;min-width:0;margin-left:8px">'
+  +    '<label style="display:block;margin-bottom:4px">Width</label>'
+  +    '<input id="pro-width" type="number" min="1" max="12" value="3" style="width:100%;box-sizing:border-box;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#111;color:#fff">'
+  +  '</div>'
+  +  '<div style="flex:1;min-width:0;margin-left:6px">'
+  +    '<label style="display:block;margin-bottom:4px">Color</label>'
+  +    '<input id="pro-color" type="color" value="#ff0000" style="width:100%;height:36px;box-sizing:border-box;padding:0;border-radius:7px;border:1px solid #333;background:#111;color:#fff">'
+  +  '</div>'
+  +'</div>'
+  +'<div style="display:grid;gap:10px">'
+  +  '<div style="padding:0 8px;"><label style="display:block;margin-bottom:4px">Route</label><input id="pro-route" placeholder="KHWD KDVT" style="width:100%;box-sizing:border-box;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#111;color:#fff"></div>'
+  +  '<div style="display:flex;gap:10px;margin-bottom:10px;padding:0 8px;">'
+  +    '<button id="pro-draw" disabled style="flex:1;padding:9px 12px;background:#2ecc71;border:0;color:#000;font-weight:700;border-radius:7px;cursor:pointer;opacity:0.6">Parse & Draw</button>'
+  +    '<button id="pro-clear" style="flex:1;padding:9px 12px;background:#444;border:0;color:#fff;border-radius:7px;cursor:pointer">Clear</button>'
+  +  '</div>'
+  +  '<pre id="pro-log" style="white-space:pre-wrap;background:#0a0a0a;padding:8px;border-radius:7px;border:1px solid #222;max-height:220px;overflow:auto;margin:0"></pre>'
+  +'</div>';
+  document.body.appendChild(box);
+  // On load, set FAA Cycle control from PRO_META if available
+  chrome.storage.local.get(['PRO_META'], (res) => {
+    const cycleInput = document.getElementById('pro-cycle');
+    if (cycleInput && res.PRO_META && res.PRO_META.cycleDate) {
+      const cycleDateStr = res.PRO_META.cycleDate;
+      if (res.PRO_META.cycleKey) {
+        cycleInput.value = `✅ ${cycleDateStr}`;
+      } else {
+        cycleInput.value = cycleDateStr;
+      }
+    }
+  });
   document.body.appendChild(box);
   // Drag logic for panel (must be after box.innerHTML)
   (function(){
@@ -146,6 +188,8 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
       box.style.left = (startLeft + dx) + 'px';
       box.style.top = (startTop + dy) + 'px';
       box.style.right = '';
+      // Persist position in sessionStorage
+      sessionStorage.setItem('PRO_SIDEBAR_POS', JSON.stringify({left: startLeft + dx, top: startTop + dy}));
     });
     window.addEventListener('mouseup', function(){
       if(isDragging){
@@ -171,12 +215,16 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
   let debugEnabled = false;
   // Load debug state from storage
   chrome.storage.local.get(['PRO_DEBUG'], (res) => {
-    debugEnabled = !!res.PRO_DEBUG;
-    debugCheckbox.checked = debugEnabled;
+  debugEnabled = !!res.PRO_DEBUG;
+  debugCheckbox.checked = debugEnabled;
+  window.PRO_DEBUG = debugEnabled;
+  window.dispatchEvent(new CustomEvent('PRO_DEBUG_CHANGED', { detail: { enabled: debugEnabled } }));
   });
   debugCheckbox.addEventListener('change', () => {
-    debugEnabled = debugCheckbox.checked;
-    chrome.storage.local.set({ PRO_DEBUG: debugEnabled });
+  debugEnabled = debugCheckbox.checked;
+  window.PRO_DEBUG = debugEnabled;
+  window.dispatchEvent(new CustomEvent('PRO_DEBUG_CHANGED', { detail: { enabled: debugEnabled } }));
+  chrome.storage.local.set({ PRO_DEBUG: debugEnabled });
   });
   // Only log if debug is enabled
   const setStatus = t => {
@@ -190,11 +238,44 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
     port.onMessage.addListener(m=>{
       if(m && m.phase === 'nasr_status') {
         // Display extension version and NASR data date
-        const dateStr = m.fetchedAt ? (new Date(m.fetchedAt)).toLocaleDateString() : 'unknown';
-        setStatus(`PRO v${m.version} | NASR cycle: ${m.cycleKey || 'unknown'} | Data date: ${dateStr}`);
+        const cycleDateStr = m.cycleKey ? m.cycleKey : '';
+        window.PRO_NASR_DATE = cycleDateStr;
+        const cycleInput = document.getElementById('pro-cycle');
+        if (cycleInput) {
+          if (m.cycleKey && m.fetchedAt) {
+            cycleInput.value = `✅ ${cycleDateStr}`;
+          } else if (m.cycleKey) {
+            cycleInput.value = cycleDateStr;
+          } else {
+            cycleInput.value = 'Updating...';
+          }
+        }
+        setStatus(`PRO v${m.version} | NASR cycle: ${m.cycleKey || 'unknown'} | Data date: ${cycleDateStr || 'Updating...'}`);
         // Enable draw button if NASR is ready (cycleKey and fetchedAt present)
         if (m.cycleKey && m.fetchedAt && drawBtn) { drawBtn.disabled = false; drawBtn.style.opacity = ''; }
       } else if(m && m.phase) {
+        // If phase indicates start of update, show 'Updating...' in cycle control
+        const cycleInput = document.getElementById('pro-cycle');
+        if (m.phase === 'start' || m.phase === 'apt_start' || m.phase === 'nav_start' || m.phase === 'fix_start') {
+          if (cycleInput) cycleInput.value = 'Updating...';
+        }
+        // If phase is 'done', update cycle control with latest date
+        if (m.phase === 'done') {
+          chrome.storage.local.get(['PRO_META'], (res) => {
+            if (cycleInput && res.PRO_META && res.PRO_META.cycleDate) {
+              const cycleDateStr = res.PRO_META.cycleDate;
+              if (res.PRO_META.cycleKey) {
+                cycleInput.value = `✅ ${cycleDateStr}`;
+              } else {
+                cycleInput.value = cycleDateStr;
+              }
+            }
+          });
+        }
+        // If phase is 'error', show red X and !Failed! in cycle control
+        if (m.phase === 'error') {
+          if (cycleInput) cycleInput.value = '❌ !Failed!';
+        }
         setStatus(m.phase);
       }
     });
@@ -300,7 +381,7 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
         const a=airports[tok]; if(a) return [a.lat,a.lon,tok];
       }
       const a=airports['A/'+tok]; if(a) return [a.lat,a.lon,tok];
-      throw new Error('Unknown airport '+tok);
+      return null;
     }
     function findFix(tok){ const f=fixes[tok]; if(f) return [f.lat,f.lon,tok]; return null; }
     function findVOR(tok){ const v=navaids[tok]; if(v) return [v.lat,v.lon,tok]; return null; }
@@ -308,13 +389,14 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
     const points=[];
     for(const tok of toks){
       let p=null;
-      if(/^[A-Z]{4}$/.test(tok) || /^A\/[A-Z0-9]{3,4}$/.test(tok)){ try{ p=findAirport(tok); }catch(e){ p=null; } }
+      if(/^[A-Z]{4}$/.test(tok) || /^A\/[A-Z0-9]{3,4}$/.test(tok)){ p=findAirport(tok); }
       if(!p && /^[A-Z]{5}$/.test(tok)) p=findFix(tok);
       if(!p && /^[A-Z]{3}$/.test(tok)) p=findVOR(tok);
       if(!p && /^[A-Z0-9]{3,4}$/.test(tok)) { const a=airports['A/'+tok]; if(a) p=[a.lat,a.lon,tok]; }
-      if(p) points.push(p);
+      if(!p) return {error:tok};
+      points.push(p);
     }
-    if(points.length<2) throw new Error('Could not resolve enough waypoints.');
+    if(points.length<2) return {error:'Could not resolve enough waypoints.'};
     const latlngs=[];
     for(let i=0;i<points.length-1;i++){
       latlngs.push(...interp([points[i][0],points[i][1]],[points[i+1][0],points[i+1][1]], 25));
@@ -435,7 +517,11 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
   }
   function clear(){ window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE')); }
 
-  box.querySelector('#pro-clear').onclick=()=>clear();
+  box.querySelector('#pro-clear').onclick=()=>{
+    clear();
+    const logEl = box.querySelector('#pro-log');
+    if (logEl) logEl.textContent = '';
+  };
   box.querySelector('#pro-draw').onclick=async()=>{
     try{
       setStatus('Parsing route…');
@@ -443,6 +529,13 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
       const color=box.querySelector('#pro-color').value||'#ff0000';
       const width=parseInt(box.querySelector('#pro-width').value||'3',10);
       const parsed=await parseRoute(routeStr);
+      if(parsed.error){
+        // Always log error regardless of debug checkbox
+        const logEl=box.querySelector('#pro-log');
+        logEl.textContent += `Error: Could not resolve route element "${parsed.error}"\n`;
+        logEl.scrollTop = logEl.scrollHeight;
+        return;
+      }
       const names=parsed.waypoints.map(w=>w.id).join(' → ');
       setStatus('Resolved: '+names);
       drawRoute(parsed,{color,width});

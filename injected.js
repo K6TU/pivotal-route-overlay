@@ -1,6 +1,10 @@
 
 // --- Image readiness signal ---
 (function(){
+  // Listen for debug state changes from content.js
+  window.addEventListener('PRO_DEBUG_CHANGED', function(ev) {
+    window.PRO_DEBUG = !!(ev && ev.detail && ev.detail.enabled);
+  });
   try{
     const emit = () => {
       const img = document.getElementById('display_image');
@@ -28,7 +32,7 @@
 // --- end image readiness ---
 // injected.js — PRO 5.8.7 (solid line + scroll/resize pinning)
 (function(){
-  const log=(...a)=>console.log('[PRO][inj]',...a);
+  const log=(...a)=>{ if(window.PRO_DEBUG) console.log('[PRO][inj]',...a); };
   log('loaded v5.8.7');
 
   const BOUNDS={latMax:59, latMin:21, lonMin:-129, lonMax:-64};
@@ -78,16 +82,20 @@
     const ll=state.last.latlngs;
     // Use bounds from event detail if present
     const bounds = state.last.bounds && typeof state.last.bounds === 'object' ? state.last.bounds : BOUNDS;
-    console.log('[PRO][draw] Received bounds:', state.last.bounds);
-    console.log(`[PRO][draw] Map bounds: latMax=${bounds.latMax}, latMin=${bounds.latMin}, lonMin=${bounds.lonMin}, lonMax=${bounds.lonMax}`);
-    if (r) {
-      console.log(`[PRO][draw] Canvas rect: x=${r.x}, y=${r.y}, w=${r.w}, h=${r.h}`);
+    if(window.PRO_DEBUG){
+      console.log('[PRO][draw] Received bounds:', state.last.bounds);
+      console.log(`[PRO][draw] Map bounds: latMax=${bounds.latMax}, latMin=${bounds.latMin}, lonMin=${bounds.lonMin}, lonMax=${bounds.lonMax}`);
+      if (r) {
+        console.log(`[PRO][draw] Canvas rect: x=${r.x}, y=${r.y}, w=${r.w}, h=${r.h}`);
+      }
     }
     for(let i=0;i<ll.length;i++){
       const lat=ll[i][0], lon=ll[i][1];
       const x=((lon-bounds.lonMin)/(bounds.lonMax-bounds.lonMin))*r.w;
       const y=((bounds.latMax-lat)/(bounds.latMax-bounds.latMin))*r.h;
-      console.log(`[PRO][draw] Point ${i}: lat=${lat}, lon=${lon}, px=(${x},${y})`);
+      if(window.PRO_DEBUG){
+        console.log(`[PRO][draw] Point ${i}: lat=${lat}, lon=${lon}, px=(${x},${y})`);
+      }
       if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
     }
     ctx.stroke();
