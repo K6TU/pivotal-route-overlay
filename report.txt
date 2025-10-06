@@ -1,8 +1,0 @@
-manifest.json: version 5.8.3 -> 5.8.7
-background.js: discoverCycle() replaced.
-Version strings updated in: background.js, content.js, injected.js
-
-Syntax scan (structural) 2025-09-30T14:02:48.852376Z
-[WARN] background.js -> Unmatched ] at line 59; Unmatched ) at line 59; Unclosed { starting at line 57
-[OK] content.js balanced delimiters.
-[OK] injected.js balanced delimiters.

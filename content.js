@@ -122,28 +122,30 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
   +    '<input type="checkbox" id="pro-debug" style="margin:0;"> Debug'
   +  '</label>'
   +'</div>'
-  +'<div style="display:flex;gap:10px;margin-bottom:10px;padding:0 8px;">'
-  +  '<div style="flex:1;min-width:0">'
+  +'<div style="display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto;gap:10px;margin-bottom:10px;padding:0 8px;">'
+  +  '<div style="min-width:0;grid-column:1;grid-row:1">'
   +    '<label style="display:block;margin-bottom:4px">Map Area</label>'
   +    `<input id="pro-map-area" value="${mapArea}" readonly style="width:100%;box-sizing:border-box;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#222;color:#fff;font-weight:600">`
   +  '</div>'
-  +  '<div style="flex:1;min-width:0">'
+  +  '<div style="min-width:0;grid-column:2;grid-row:1">'
   +    '<label style="display:block;margin-bottom:4px">FAA Cycle</label>'
   +    `<input id="pro-cycle" value="unknown" readonly style="width:100%;box-sizing:border-box;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#222;color:#6ec672;font-weight:600">`
   +  '</div>'
-  +'</div>'
-  +'<div style="display:flex;gap:10px;padding:0 8px;margin-bottom:10px;">'
-  +  '<div style="flex:2;min-width:0">'
+  +  '<div style="min-width:0;grid-column:1;grid-row:2">'
   +    '<label style="display:block;margin-bottom:4px">Airspeed (knots)</label>'
   +    '<input id="pro-airspeed" type="number" min="1" max="999" value="310" style="width:100%;box-sizing:border-box;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#222;color:#fff;font-weight:600">'
   +  '</div>'
-  +  '<div style="flex:1;min-width:0;margin-left:8px">'
-  +    '<label style="display:block;margin-bottom:4px">Width</label>'
-  +    '<input id="pro-width" type="number" min="1" max="12" value="3" style="width:100%;box-sizing:border-box;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#111;color:#fff">'
-  +  '</div>'
-  +  '<div style="flex:1;min-width:0;margin-left:6px">'
-  +    '<label style="display:block;margin-bottom:4px">Color</label>'
-  +    '<input id="pro-color" type="color" value="#ff0000" style="width:100%;height:36px;box-sizing:border-box;padding:0;border-radius:7px;border:1px solid #333;background:#111;color:#fff">'
+  +  '<div style="min-width:0;grid-column:2;grid-row:2">'
+  +    '<div style="display:flex;gap:10px">'
+  +      '<div style="flex:1;min-width:0">'
+  +        '<label style="display:block;margin-bottom:4px">Width</label>'
+  +        '<input id="pro-width" type="number" min="1" max="12" value="3" style="width:100%;box-sizing:border-box;padding:7px 8px;border-radius:7px;border:1px solid #333;background:#111;color:#fff">'
+  +      '</div>'
+  +      '<div style="flex:1;min-width:0">'
+  +        '<label style="display:block;margin-bottom:4px">Color</label>'
+  +        '<input id="pro-color" type="color" value="#ff0000" style="width:100%;height:36px;box-sizing:border-box;padding:0;border-radius:7px;border:1px solid #333;background:#111;color:#fff">'
+  +      '</div>'
+  +    '</div>'
   +  '</div>'
   +'</div>'
   +'<div style="display:grid;gap:10px">'
@@ -155,6 +157,21 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
   +  '<pre id="pro-log" style="white-space:pre-wrap;background:#0a0a0a;padding:8px;border-radius:7px;border:1px solid #222;max-height:220px;overflow:auto;margin:0"></pre>'
   +'</div>';
   document.body.appendChild(box);
+  // Restore airspeed from sessionStorage if present
+  try {
+    const savedAirspeed = sessionStorage.getItem('PRO_AIRSPEED');
+    if (savedAirspeed) {
+      const airspeedInput = document.getElementById('pro-airspeed');
+      if (airspeedInput) airspeedInput.value = savedAirspeed;
+    }
+  } catch(_){}
+  // Persist airspeed on change
+  const airspeedInput = document.getElementById('pro-airspeed');
+  if (airspeedInput) {
+    airspeedInput.addEventListener('input', function() {
+      sessionStorage.setItem('PRO_AIRSPEED', airspeedInput.value);
+    });
+  }
   // On load, set FAA Cycle control from PRO_META if available
   chrome.storage.local.get(['PRO_META'], (res) => {
     const cycleInput = document.getElementById('pro-cycle');
