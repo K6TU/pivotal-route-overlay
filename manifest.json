@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Pivotal Route Overlay (PRO)",
-  "version": "5.9.4",
+  "version": "6.0.1",
   "description": "Overlay parsed flight routes on Pivotal Weather maps. Fetch FAA NASR and draw routes.",
   "permissions": [
     "activeTab",
@@ -13,7 +13,8 @@
     "https://www.faa.gov/*",
     "https://nfdc.faa.gov/*",
     "https://*.pivotalweather.com/*",
-    "https://*.pivotalweather.net/*"
+    "https://*.pivotalweather.net/*",
+    "https://beta.pivotalweather.com/models/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -22,7 +23,8 @@
   "content_scripts": [
     {
       "matches": [
-        "https://www.pivotalweather.com/*"
+        "https://www.pivotalweather.com/*",
+        "https://beta.pivotalweather.com/models/*"
       ],
       "js": [
         "content.js"
