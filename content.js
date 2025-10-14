@@ -1,3 +1,444 @@
+// --- Beta UI: force redraw route when map image changes ---
+window.detectMapArea = function detectMapArea() {
+  // Classic UI
+  let mapArea = '';
+  const zoomMenu = document.getElementById('zoom_menu_link');
+  if (zoomMenu && zoomMenu.textContent) {
+    mapArea = zoomMenu.textContent.trim();
+  }
+  // Beta UI: look for button with aria-label starting with "Zoom: " inside a div with class ending _modelZoom
+  if (!mapArea) {
+    const modelZoomDiv = Array.from(document.querySelectorAll('div[class$="_modelZoom"]')).find(div => div.querySelector('button[aria-label^="Zoom: "]'));
+    if (modelZoomDiv) {
+      const btn = modelZoomDiv.querySelector('button[aria-label^="Zoom: "]');
+      if (btn && btn.getAttribute('aria-label')) {
+        const label = btn.getAttribute('aria-label');
+        const match = label.match(/Zoom: (.+)$/);
+        if (match) mapArea = match[1].trim();
+      }
+    }
+  }
+  return mapArea;
+};
+
+(function(){
+  function getBetaMapImage(){
+    const mapContainers = Array.from(document.querySelectorAll('div[class$="_mapContainer"]'));
+    for (const div of mapContainers) {
+      const imgEl = div.querySelector('img[src*="pivotalweather.com/maps/models/"]');
+      if (imgEl) return imgEl;
+    }
+    return null;
+  }
+  let lastSrc = null;
+  function detectMapArea() {
+    // Classic UI
+    let mapArea = '';
+    const zoomMenu = document.getElementById('zoom_menu_link');
+    if (zoomMenu && zoomMenu.textContent) {
+      mapArea = zoomMenu.textContent.trim();
+    }
+    // Beta UI: look for button with aria-label starting with "Zoom: " inside a div with class ending _modelZoom
+    if (!mapArea) {
+      const modelZoomDiv = Array.from(document.querySelectorAll('div[class$="_modelZoom"]')).find(div => div.querySelector('button[aria-label^="Zoom: "]'));
+      if (modelZoomDiv) {
+        const btn = modelZoomDiv.querySelector('button[aria-label^="Zoom: "]');
+        if (btn && btn.getAttribute('aria-label')) {
+          const label = btn.getAttribute('aria-label');
+          const match = label.match(/Zoom: (.+)$/);
+          if (match) mapArea = match[1].trim();
+        }
+      }
+    }
+    return mapArea;
+  }
+
+  function redrawIfNeeded(){
+    const img = getBetaMapImage();
+    if (!img) return;
+    if (img.src !== lastSrc) {
+      lastSrc = img.src;
+      // Re-detect map area and update sidebar input
+      const mapArea = detectMapArea();
+      const mapAreaInput = document.getElementById('pro-map-area');
+      if (mapAreaInput) mapAreaInput.value = mapArea;
+      // Reparse and redraw route if present
+      const route = (document.getElementById('pro-route')||{}).value||'';
+      const color = (document.getElementById('pro-color')||{}).value||'#ff0000';
+      const width = parseInt((document.getElementById('pro-width')||{}).value||'3',10);
+      if (route.trim()) {
+        drawRouteFromString(route, color, width, 'restore');
+      } else {
+        window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+      }
+    }
+  }
+  // Observe map container for child changes and image loads
+  function hideOverlayCanvas() {
+    const cv = document.getElementById('pro_route_canvas');
+    if (cv) cv.style.display = 'none';
+  }
+  function showOverlayCanvas() {
+    const cv = document.getElementById('pro_route_canvas');
+    if (cv) cv.style.display = '';
+  }
+  // Robust observer: re-attach if map container changes
+  (function robustReactObserve() {
+    // Polling loop to keep sidebar input in sync with current subregion
+    setInterval(() => {
+      const btn = Array.from(document.querySelectorAll('div[class$="_modelZoom"] button[aria-label^="Zoom: "]'))[0];
+      if (btn) {
+        const label = btn.getAttribute('aria-label');
+        const match = label.match(/Zoom: (.+)$/);
+        const mapAreaInput = document.getElementById('pro-map-area');
+        if (match && mapAreaInput && mapAreaInput.value !== match[1].trim()) {
+          mapAreaInput.value = match[1].trim();
+          console.log('[PRO][content] Sidebar pro-map-area input polled and updated to:', mapAreaInput.value);
+        }
+      }
+    }, 500);
+
+  let lastImgSrc = null;
+  let lastSubregion = null;
+  let imgMo = null;
+  let btnMo = null;
+  let parentMo = null;
+  let zoomParentMo = null;
+    function hideAndClear() {
+      hideOverlayCanvas();
+      window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+    }
+    function redrawIfBothReady() {
+      const img = getBetaMapImage();
+      const mapArea = detectMapArea();
+      if (!img || !img.complete || !mapArea) return;
+      const mapAreaInput = document.getElementById('pro-map-area');
+      if (mapAreaInput) mapAreaInput.value = mapArea;
+      const route = (document.getElementById('pro-route')||{}).value||'';
+      const color = (document.getElementById('pro-color')||{}).value||'#ff0000';
+      const width = parseInt((document.getElementById('pro-width')||{}).value||'3',10);
+      if (route.trim()) {
+        drawRouteFromString(route, color, width, 'restore');
+        showOverlayCanvas();
+      } else {
+        window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+      }
+    }
+    function observeImage(img) {
+      if (!img) return;
+      if (imgMo) imgMo.disconnect();
+      lastImgSrc = img.src;
+      // Draw route immediately when image element appears
+      redrawIfBothReady();
+      imgMo = new MutationObserver(() => {
+        if (img.src !== lastImgSrc) {
+          lastImgSrc = img.src;
+          hideAndClear();
+          img.addEventListener('load', redrawIfBothReady, { once: true });
+        }
+      });
+      imgMo.observe(img, { attributes: true, attributeFilter: ['src'] });
+      if (!img.complete) {
+        hideAndClear();
+        img.addEventListener('load', redrawIfBothReady, { once: true });
+      }
+    }
+    function observeSubregionBtn(btn) {
+      if (!btn) return;
+      if (btnMo) btnMo.disconnect();
+      const currentLabel = btn.getAttribute('aria-label');
+      console.log('[PRO][content] Attaching MutationObserver to subregion button:', currentLabel);
+      // Immediately check if subregion has changed
+      if (lastSubregion !== null && currentLabel !== lastSubregion) {
+        console.log('[PRO][content] Subregion changed (immediate check):', currentLabel);
+        lastSubregion = currentLabel;
+        hideOverlayCanvas();
+        window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+        // Force update sidebar input for map area
+        const mapAreaInput = document.getElementById('pro-map-area');
+        let newArea = '';
+        if (mapAreaInput) {
+          const match = currentLabel.match(/Zoom: (.+)$/);
+          if (match) {
+            newArea = match[1].trim();
+            mapAreaInput.value = newArea;
+            console.log('[PRO][content] Updated pro-map-area input to:', mapAreaInput.value);
+          }
+        }
+        // Re-attach image observer to new map image after subregion change
+        setTimeout(() => {
+          const img = getBetaMapImage();
+          observeImage(img);
+          // If image is already loaded and src is present, trigger redraw immediately
+          if (img && img.complete && img.src) {
+            redrawIfBothReady();
+          }
+        }, 100);
+        // Wait for sidebar input to match newArea before drawing
+        let tries = 0;
+        function waitAndDraw() {
+          const mapAreaInput = document.getElementById('pro-map-area');
+          if (mapAreaInput && mapAreaInput.value === newArea) {
+            // Use last route if available
+            let routeStr = (document.getElementById('pro-route')||{}).value||'';
+            let color = (document.getElementById('pro-color')||{}).value||'#ff0000';
+            let width = parseInt((document.getElementById('pro-width')||{}).value||'3',10);
+            if (!routeStr.trim() && window.__PRO_LAST_ROUTE) {
+              routeStr = window.__PRO_LAST_ROUTE.route;
+              color = window.__PRO_LAST_ROUTE.color;
+              width = window.__PRO_LAST_ROUTE.width;
+            }
+            if (routeStr && routeStr.trim()) {
+              parseRoute(routeStr).then(parsed => {
+                if (!parsed.error) {
+                  console.log('[PRO][content] Drawing route after subregion change');
+                  drawRoute(parsed, { color, width });
+                  showOverlayCanvas();
+                } else {
+                  window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+                }
+              });
+            } else {
+              window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+            }
+          } else if (tries < 20) {
+            tries++;
+            setTimeout(waitAndDraw, 25);
+          } else {
+            console.warn('[PRO][content] Sidebar input did not update in time, drawing anyway.');
+            let routeStr = (document.getElementById('pro-route')||{}).value||'';
+            let color = (document.getElementById('pro-color')||{}).value||'#ff0000';
+            let width = parseInt((document.getElementById('pro-width')||{}).value||'3',10);
+            if (!routeStr.trim() && window.__PRO_LAST_ROUTE) {
+              routeStr = window.__PRO_LAST_ROUTE.route;
+              color = window.__PRO_LAST_ROUTE.color;
+              width = window.__PRO_LAST_ROUTE.width;
+            }
+            if (routeStr && routeStr.trim()) {
+              parseRoute(routeStr).then(parsed => {
+                if (!parsed.error) {
+                  console.log('[PRO][content] Drawing route after subregion change (poll fallback)');
+                  drawRoute(parsed, { color, width });
+                  showOverlayCanvas();
+                } else {
+                  window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+                }
+              });
+            } else {
+              window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+            }
+          }
+        }
+        waitAndDraw();
+      }
+      lastSubregion = currentLabel;
+      btnMo = new MutationObserver(() => {
+        const label = btn.getAttribute('aria-label');
+        if (label !== lastSubregion) {
+          console.log('[PRO][content] Subregion changed (MutationObserver):', label);
+          lastSubregion = label;
+          // Immediately clear/hide overlay
+          hideOverlayCanvas();
+          window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+          // Force update sidebar input for map area
+          const mapAreaInput = document.getElementById('pro-map-area');
+          let newArea = '';
+          if (mapAreaInput) {
+            const match = label.match(/Zoom: (.+)$/);
+            if (match) {
+              newArea = match[1].trim();
+              mapAreaInput.value = newArea;
+              console.log('[PRO][content] Updated pro-map-area input to:', mapAreaInput.value);
+            }
+          }
+          // Wait for sidebar input to match newArea before drawing
+          let tries = 0;
+          function waitAndDraw() {
+            const mapAreaInput = document.getElementById('pro-map-area');
+            if (mapAreaInput && mapAreaInput.value === newArea) {
+              // Automatically trigger redraw using sidebar values
+              const routeStr = (document.getElementById('pro-route')||{}).value||'';
+              const color = (document.getElementById('pro-color')||{}).value||'#ff0000';
+              const width = parseInt((document.getElementById('pro-width')||{}).value||'3',10);
+              if (routeStr.trim()) {
+                parseRoute(routeStr).then(parsed => {
+                  if (!parsed.error) {
+                    console.log('[PRO][content] Drawing route after subregion change');
+                    drawRoute(parsed, { color, width });
+                    showOverlayCanvas();
+                  } else {
+                    window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+                  }
+                });
+              } else {
+                window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+              }
+            } else if (tries < 20) {
+              tries++;
+              setTimeout(waitAndDraw, 25);
+            } else {
+              console.warn('[PRO][content] Sidebar input did not update in time, drawing anyway.');
+              // Fallback: draw with whatever value is present
+              const routeStr = (document.getElementById('pro-route')||{}).value||'';
+              const color = (document.getElementById('pro-color')||{}).value||'#ff0000';
+              const width = parseInt((document.getElementById('pro-width')||{}).value||'3',10);
+              if (routeStr.trim()) {
+                parseRoute(routeStr).then(parsed => {
+                  if (!parsed.error) {
+                    console.log('[PRO][content] Drawing route after subregion change (poll fallback)');
+                    drawRoute(parsed, { color, width });
+                    showOverlayCanvas();
+                  } else {
+                    window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+                  }
+                });
+              } else {
+                window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+              }
+            }
+          }
+          waitAndDraw();
+        }
+      });
+      btnMo.observe(btn, { attributes: true, attributeFilter: ['aria-label'] });
+      // Fallback polling for aria-label changes
+      if (!btn._pro_polling) {
+        btn._pro_polling = true;
+        let pollCount = 0;
+        (function pollLabel() {
+          if (!document.body.contains(btn)) return;
+          const label = btn.getAttribute('aria-label');
+          if (label !== lastSubregion) {
+            console.log('[PRO][content] Subregion changed (poll):', label);
+            lastSubregion = label;
+            // Force update sidebar input for map area
+            const mapAreaInput = document.getElementById('pro-map-area');
+            let newArea = '';
+            if (mapAreaInput) {
+              const match = label.match(/Zoom: (.+)$/);
+              if (match) {
+                newArea = match[1].trim();
+                mapAreaInput.value = newArea;
+                console.log('[PRO][content] Updated pro-map-area input to:', mapAreaInput.value);
+              }
+            }
+            // Wait for sidebar input to match newArea before drawing
+            let tries = 0;
+            function waitAndDraw() {
+              const mapAreaInput = document.getElementById('pro-map-area');
+              if (mapAreaInput && mapAreaInput.value === newArea) {
+                // Automatically trigger redraw using sidebar values
+                const routeStr = (document.getElementById('pro-route')||{}).value||'';
+                const color = (document.getElementById('pro-color')||{}).value||'#ff0000';
+                const width = parseInt((document.getElementById('pro-width')||{}).value||'3',10);
+                let mapAreaValue = newArea;
+                if (routeStr.trim()) {
+                  parseRoute(routeStr).then(parsed => {
+                    if (!parsed.error) {
+                      console.log('[PRO][content] Drawing route after subregion change (poll fallback)');
+                      drawRoute(parsed, { color, width });
+                      showOverlayCanvas();
+                    } else {
+                      window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+                    }
+                  });
+                } else {
+                  window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+                }
+              } else if (tries < 20) {
+                tries++;
+                setTimeout(waitAndDraw, 25);
+              } else {
+                console.warn('[PRO][content] Sidebar input did not update in time, drawing anyway.');
+                // Fallback: draw with whatever value is present
+                const routeStr = (document.getElementById('pro-route')||{}).value||'';
+                const color = (document.getElementById('pro-color')||{}).value||'#ff0000';
+                const width = parseInt((document.getElementById('pro-width')||{}).value||'3',10);
+                const mapAreaInput = document.getElementById('pro-map-area');
+                let mapAreaValue = mapAreaInput ? mapAreaInput.value : '';
+                if (routeStr.trim()) {
+                  parseRoute(routeStr).then(parsed => {
+                    if (!parsed.error) {
+                      console.log('[PRO][content] Drawing route after subregion change (poll fallback)');
+                      drawRoute(parsed, { color, width });
+                      showOverlayCanvas();
+                    } else {
+                      window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+                    }
+                  });
+                } else {
+                  window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+                }
+              }
+            }
+            waitAndDraw();
+          }
+          pollCount++;
+          if (pollCount < 2000) setTimeout(pollLabel, 250); // poll for up to 8 minutes
+        })();
+      }
+    }
+    function attachObservers() {
+      const img = getBetaMapImage();
+      observeImage(img);
+      // Robust polling for subregion button
+      let lastBtn = null;
+      setInterval(() => {
+        const btn = Array.from(document.querySelectorAll('div[class$="_modelZoom"] button[aria-label^="Zoom: "]'))[0];
+        if (btn !== lastBtn) {
+          lastBtn = btn;
+          if (btn) {
+            console.log('[PRO][content] Attaching subregion observer to button with aria-label:', btn.getAttribute('aria-label'));
+            observeSubregionBtn(btn);
+          }
+        }
+      }, 500);
+      // Attach observer to parent of subregion button
+      const zoomDiv = lastBtn ? lastBtn.closest('div[class$="_modelZoom"]') : document.querySelector('div[class$="_modelZoom"]');
+      if (zoomDiv) {
+        if (zoomParentMo) zoomParentMo.disconnect();
+        zoomParentMo = new MutationObserver(() => {
+          // Button may have been replaced, re-attach attribute observer
+          const newBtn = zoomDiv.querySelector('button[aria-label^="Zoom: "]');
+          if (newBtn) {
+            console.log('[PRO][content] Attaching subregion observer to button with aria-label:', newBtn.getAttribute('aria-label'));
+            observeSubregionBtn(newBtn);
+          }
+        });
+        zoomParentMo.observe(zoomDiv, { childList: true, subtree: true });
+      }
+    }
+    function observeParent() {
+      // Find a stable parent container for both map image and subregion button
+      const mapContainer = document.querySelector('div[class$="_mapContainer"]');
+      if (!mapContainer) return;
+      if (parentMo) parentMo.disconnect();
+      parentMo = new MutationObserver((mutations) => {
+        let relevant = false;
+        for (const m of mutations) {
+          if (m.type === 'childList' || m.type === 'subtree') {
+            relevant = true;
+            break;
+          }
+          // Also check attribute changes on children
+          if (m.type === 'attributes') {
+            relevant = true;
+            break;
+          }
+        }
+        if (relevant) {
+          attachObservers();
+        }
+      });
+      parentMo.observe(mapContainer, { childList: true, subtree: true, attributes: true });
+      // Initial attach
+      attachObservers();
+    }
+    // Attach parent observer on DOMContentLoaded and after short delay
+    document.addEventListener('DOMContentLoaded', observeParent);
+    setTimeout(observeParent, 1000);
+  })();
+})();
   // Map area boundaries lookup
   const MAP_AREAS = {
     'Continental US': { latMax: 59, latMin: 21, lonMin: -129, lonMax: -64.1 },
@@ -106,11 +547,25 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
       box.style.right = '';
     }
   } catch(_){}
-  // Extract map area text from #zoom_menu_link
+  // Detect map area/subregion name for both classic and beta UI
   let mapArea = '';
+  // Classic UI
   const zoomMenu = document.getElementById('zoom_menu_link');
   if (zoomMenu && zoomMenu.textContent) {
     mapArea = zoomMenu.textContent.trim();
+  }
+  // Beta UI: look for button with aria-label starting with "Zoom: " inside a div with class ending _modelZoom
+  if (!mapArea) {
+    const modelZoomDiv = Array.from(document.querySelectorAll('div[class$="_modelZoom"]')).find(div => div.querySelector('button[aria-label^="Zoom: "]'));
+    if (modelZoomDiv) {
+      const btn = modelZoomDiv.querySelector('button[aria-label^="Zoom: "]');
+      if (btn && btn.getAttribute('aria-label')) {
+        // aria-label is like "Zoom: Southwest US"
+        const label = btn.getAttribute('aria-label');
+        const match = label.match(/Zoom: (.+)$/);
+        if (match) mapArea = match[1].trim();
+      }
+    }
   }
 
   box.innerHTML=''
@@ -342,7 +797,13 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
       if(!okIdx || !okImg){ setStatus('Ready, but route redraw waiting for map/indices…'); return; }
       setStatus('Parsing route…'); 
       console.log('[PRO][content] restoring route now ->', cached);
-      await drawRouteFromString(cached.route, cached.color||'#ff0000', cached.width||3, 'restore');
+      // Use latest mapAreaValue for redraw
+      const mapAreaInput = document.getElementById('pro-map-area');
+      let mapAreaValue = mapAreaInput ? mapAreaInput.value : '';
+      const parsed = await parseRoute(cached.route);
+      if (!parsed.error) {
+        drawRoute(parsed, { color: cached.color||'#ff0000', width: cached.width||3, mapAreaValue });
+      }
     } catch(e){ console.warn('[PRO][content] restore failed', e); if (typeof setStatus==='function') setStatus('Route restore failed: '+(e.message||e)); }
         }
   
@@ -479,17 +940,18 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
   }
 
   function drawRoute(parsed,opts){
-    let mapAreaName = (document.getElementById('pro-map-area')||{}).value || 'Continental US';
-    mapAreaName = mapAreaName.trim();
-    console.log('[PRO][route] MAP_AREAS keys:', Object.keys(MAP_AREAS));
-    if (!MAP_AREAS[mapAreaName]) {
-      console.warn('[PRO][route] Map area name not found in MAP_AREAS:', mapAreaName, 'Using CONUS bounds.');
-    } else {
-      console.log('[PRO][route] Using map area:', mapAreaName);
-    }
-    const bounds = MAP_AREAS[mapAreaName] || MAP_AREAS['Continental US'];
-    // Log map name and boundaries before clipping
-    console.log(`[PRO][route] drawRoute: mapAreaName="${mapAreaName}", bounds= latMax=${bounds.latMax}, latMin=${bounds.latMin}, lonMin=${bounds.lonMin}, lonMax=${bounds.lonMax}`);
+  let mapAreaInput = document.getElementById('pro-map-area');
+  let mapAreaName = mapAreaInput ? mapAreaInput.value.trim() : 'Continental US';
+  console.log('[PRO][route] MAP_AREAS keys:', Object.keys(MAP_AREAS));
+  console.log('[PRO][route] drawRoute: using pro-map-area value:', mapAreaName);
+  if (!MAP_AREAS[mapAreaName]) {
+    console.warn('[PRO][route] Map area name not found in MAP_AREAS:', mapAreaName, 'Using CONUS bounds.');
+  } else {
+    console.log('[PRO][route] Using map area:', mapAreaName);
+  }
+  const bounds = MAP_AREAS[mapAreaName] || MAP_AREAS['Continental US'];
+  // Log map name and boundaries before clipping
+  console.log(`[PRO][route] drawRoute: mapAreaName="${mapAreaName}", bounds= latMax=${bounds.latMax}, latMin=${bounds.latMin}, lonMin=${bounds.lonMin}, lonMax=${bounds.lonMax}`);
     // Clip each segment to bounds
     const clippedLatLngs = [];
     for (let i = 0; i < parsed.latlngs.length - 1; i++) {
@@ -545,6 +1007,13 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
       const routeStr=box.querySelector('#pro-route').value;
       const color=box.querySelector('#pro-color').value||'#ff0000';
       const width=parseInt(box.querySelector('#pro-width').value||'3',10);
+      // Log the value of pro-map-area at draw time
+      const mapAreaInput = document.getElementById('pro-map-area');
+      let mapAreaValue = '';
+      if (mapAreaInput) {
+        mapAreaValue = mapAreaInput.value;
+        console.log('[PRO][content] pro-map-area value at draw:', mapAreaValue);
+      }
       const parsed=await parseRoute(routeStr);
       if(parsed.error){
         // Always log error regardless of debug checkbox
@@ -555,7 +1024,7 @@ async function waitFor(test, timeout=5000, step=50){ const t0=Date.now(); while(
       }
       const names=parsed.waypoints.map(w=>w.id).join(' → ');
       setStatus('Resolved: '+names);
-      drawRoute(parsed,{color,width});
+  drawRoute(parsed,{color,width,mapAreaValue});
       setStatus('Sent draw ('+parsed.latlngs.length+' pts)');
       setStatus('Route drawn.');
       console.log('[PRO][content] calling saveLastRoute after draw');
@@ -586,7 +1055,22 @@ try{
     try{
       const last = await loadLastRoute();
       if (last && last.route) {
-        await drawRouteFromString(last.route, last.color, last.width, 'restore');
+        // Wait for sidebar input to match detected map area before drawing
+        const mapAreaInput = document.getElementById('pro-map-area');
+        const detectedArea = detectMapArea();
+        let tries = 0;
+        function waitAndDrawRestore() {
+          if (mapAreaInput && mapAreaInput.value === detectedArea) {
+            drawRouteFromString(last.route, last.color, last.width, 'restore');
+          } else if (tries < 40) {
+            tries++;
+            setTimeout(waitAndDrawRestore, 50);
+          } else {
+            console.warn('[PRO][content] Sidebar input did not update in time for restore, drawing anyway.');
+            drawRouteFromString(last.route, last.color, last.width, 'restore');
+          }
+        }
+        waitAndDrawRestore();
       }
     }catch(e){ console.warn('[PRO][content] restore-on-ready failed', e); }
   });

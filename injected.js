@@ -38,7 +38,26 @@
   const BOUNDS={latMax:59, latMin:21, lonMin:-129, lonMax:-64};
   const state={overlay:null, ctx:null, rect:null, last:null};
 
+  // Redraw overlay when map image loads or changes (beta UI)
+  function observeBetaMapImage(redrawFn) {
+    // Find beta map image
+    const mapContainers = Array.from(document.querySelectorAll('div[class$="_mapContainer"]'));
+    for (const div of mapContainers) {
+      const imgEl = div.querySelector('img[src*="pivotalweather.com/maps/models/"]');
+      if (imgEl) {
+        imgEl.addEventListener('load', () => { setTimeout(redrawFn, 10); }, { once: true });
+        // Also observe src changes
+        const mo = new MutationObserver(() => { setTimeout(redrawFn, 10); });
+        mo.observe(imgEl, { attributes: true, attributeFilter: ['src'] });
+        break;
+      }
+    }
+  }
+
+  observeBetaMapImage(() => { if (typeof redraw === 'function') redraw(); });
+
   function getRect(){
+    // Classic UI
     const area=document.getElementById('click_map_area');
     const img=document.getElementById('display_image');
     if(area&&area.coords&&img){
@@ -51,6 +70,19 @@
         return {x:baseX+x1,y:baseY+y1,w:(x2-x1),h:(y2-y1)};
       }
     }
+    // Beta UI: look for img inside a div with class ending _mapContainer
+    let betaImg = null;
+    const mapContainers = Array.from(document.querySelectorAll('div[class$="_mapContainer"]'));
+    for (const div of mapContainers) {
+      const imgEl = div.querySelector('img[src*="pivotalweather.com/maps/models/"]');
+      if (imgEl) { betaImg = imgEl; break; }
+    }
+    if (betaImg) {
+      const r = betaImg.getBoundingClientRect();
+      const x = Math.round(window.scrollX + r.left), y = Math.round(window.scrollY + r.top);
+      return {x, y, w: Math.round(r.width), h: Math.round(r.height)};
+    }
+    // Fallback: classic image
     if(img){
       const r=img.getBoundingClientRect();
       const x=Math.round(window.scrollX+r.left), y=Math.round(window.scrollY+r.top);
@@ -62,9 +94,10 @@
     if(state.overlay && document.body.contains(state.overlay)) return state.overlay;
     const cv=document.createElement('canvas');
     cv.id='pro_route_canvas';
-  cv.style.position='absolute';
-  cv.style.pointerEvents='none';
-  cv.style.zIndex=1;
+    cv.style.position='absolute';
+    cv.style.pointerEvents='none';
+    cv.style.zIndex=1;
+    cv.style.display='none'; // Start hidden
     document.body.appendChild(cv);
     state.overlay=cv; state.ctx=cv.getContext('2d');
     return cv;
@@ -72,7 +105,9 @@
   function redraw(){
     if(!state.last) return;
     const r=state.rect=getRect(); if(!r) return;
-    const cv=ensureOverlay(); cv.width=Math.max(1,r.w); cv.height=Math.max(1,r.h);
+    const cv=ensureOverlay();
+    cv.style.display='none'; // Hide before drawing
+    cv.width=Math.max(1,r.w); cv.height=Math.max(1,r.h);
     cv.style.left=r.x+'px'; cv.style.top=r.y+'px';
     const ctx=state.ctx; ctx.clearRect(0,0,cv.width,cv.height);
     ctx.lineWidth=Math.max(1,state.last.width||3);
@@ -118,6 +153,7 @@
         ctx.restore();
       }
     }
+    cv.style.display=''; // Show after drawing
   }
   function handleDraw(detail){
     if(!detail||!Array.isArray(detail.latlngs)||detail.latlngs.length<2) return;
@@ -125,7 +161,13 @@
     redraw();
   }
   window.addEventListener('PRO_DRAW_ROUTE', ev=>{ try{ handleDraw(ev.detail||{});}catch(e){console.warn(e);} });
-  window.addEventListener('PRO_CLEAR_ROUTE', ()=>{ state.last=null; if(state.overlay){ state.ctx.clearRect(0,0,state.overlay.width,state.overlay.height);} });
+  window.addEventListener('PRO_CLEAR_ROUTE', ()=>{
+    state.last=null;
+    if(state.overlay){
+      state.ctx.clearRect(0,0,state.overlay.width,state.overlay.height);
+      state.overlay.style.display='none'; // Hide canvas immediately
+    }
+  });
   window.addEventListener('scroll', ()=>redraw(), {passive:true});
   window.addEventListener('resize', ()=>redraw());
 })();
