@@ -1,4 +1,13 @@
-// --- Beta UI: force redraw route when map image changes ---
+// === Debug Logging Helper ===
+function proDebugLog(...args) {
+  const debugCheckbox = document.getElementById('pro-debug');
+  if (debugCheckbox && debugCheckbox.checked) {
+    console.log(...args);
+  }
+}
+
+
+// === Map Area Detection ===
 window.detectMapArea = function detectMapArea() {
   // Classic UI
   let mapArea = '';
@@ -22,6 +31,231 @@ window.detectMapArea = function detectMapArea() {
 };
 
 (function(){
+  // === Observer State ===
+  let lastImgSrc = null;
+  let lastSubregion = null;
+  let imageObserver = null;
+
+  (function () {
+    // === Observer State ===
+    let lastImgSrc = null;
+    let lastSubregion = null;
+    let imageObserver = null;
+    let buttonObserver = null;
+    let parentObserver = null;
+    let zoomParentObserver = null;
+
+    // === DOM Observation Helpers ===
+    function observeImage(img) {
+      if (!img) return;
+      if (imageObserver) imageObserver.disconnect();
+      lastImgSrc = img.src;
+      // Draw route immediately when image element appears
+      redrawIfBothReady();
+      imageObserver = new MutationObserver(() => {
+        if (img.src !== lastImgSrc) {
+          lastImgSrc = img.src;
+          hideAndClear();
+          img.addEventListener('load', redrawIfBothReady, { once: true });
+        }
+      });
+      imageObserver.observe(img, { attributes: true, attributeFilter: ['src'] });
+      if (!img.complete) {
+        hideAndClear();
+        img.addEventListener('load', redrawIfBothReady, { once: true });
+      }
+    }
+
+    function observeSubregionBtn(btn) {
+      if (!btn) return;
+      if (buttonObserver) buttonObserver.disconnect();
+      const currentLabel = btn.getAttribute('aria-label');
+      proDebugLog('[PRO][content] Attaching MutationObserver to subregion button:', currentLabel);
+      // ...existing code...
+    }
+
+    // === Attach Observers & Initialization ===
+    function attachObservers() {
+      const img = getBetaMapImage();
+      observeImage(img);
+      // Polling for subregion button (prefer event-driven updates if possible)
+      let lastBtn = null;
+      setInterval(() => {
+        const btn = Array.from(document.querySelectorAll('div[class$="_modelZoom"] button[aria-label^="Zoom: "]'))[0];
+        if (btn !== lastBtn) {
+          lastBtn = btn;
+          if (btn) {
+            proDebugLog('[PRO][content] Attaching subregion observer to button with aria-label:', btn.getAttribute('aria-label'));
+            observeSubregionBtn(btn);
+          }
+        }
+      }, 2000); // Reduced polling frequency for performance
+      // Attach observer to parent of subregion button
+      const zoomDiv = lastBtn ? lastBtn.closest('div[class$="_modelZoom"]') : document.querySelector('div[class$="_modelZoom"]');
+      if (zoomDiv) {
+        if (zoomParentObserver) zoomParentObserver.disconnect();
+        zoomParentObserver = new MutationObserver(() => {
+          // Button may have been replaced, re-attach attribute observer
+          const newBtn = zoomDiv.querySelector('button[aria-label^="Zoom: "]');
+          if (newBtn) {
+            proDebugLog('[PRO][content] Attaching subregion observer to button with aria-label:', newBtn.getAttribute('aria-label'));
+            observeSubregionBtn(newBtn);
+          }
+        });
+        zoomParentObserver.observe(zoomDiv, { childList: true, subtree: true });
+      }
+    }
+
+    // Call attachObservers on script load
+    attachObservers();
+
+    // === Sidebar & Route Helpers ===
+    function updateSidebarInput(mapArea) {
+      const mapAreaInput = document.getElementById('pro-map-area');
+      if (mapAreaInput) mapAreaInput.value = mapArea;
+    }
+
+    function redrawRouteIfPresent({ restore = false } = {}) {
+      const route = (document.getElementById('pro-route') || {}).value || '';
+      const color = (document.getElementById('pro-color') || {}).value || '#ff0000';
+      const width = parseInt((document.getElementById('pro-width') || {}).value || '3', 10);
+      if (route.trim()) {
+        if (restore) {
+          drawRouteFromString(route, color, width, 'restore');
+        } else {
+          drawRouteFromString(route, color, width);
+        }
+      } else {
+        window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+      }
+    }
+
+    // === Map Image & Area Utilities ===
+    function getBetaMapImage() {
+      const mapContainers = Array.from(document.querySelectorAll('div[class$="_mapContainer"]'));
+      for (const div of mapContainers) {
+        const imgEl = div.querySelector('img[src*="pivotalweather.com/maps/models/"]');
+        if (imgEl) return imgEl;
+      }
+      return null;
+    }
+
+    // === Route Redraw Logic ===
+    // Use window.detectMapArea throughout the file
+    function redrawIfNeeded() {
+      const img = getBetaMapImage();
+      if (!img) return;
+      if (img.src !== lastSrc) {
+        lastSrc = img.src;
+        // Re-detect map area and update sidebar input
+        const mapArea = detectMapArea();
+        updateSidebarInput(mapArea);
+        // Reparse and redraw route if present
+        redrawRouteIfPresent({ restore: true });
+      }
+    }
+
+    // === Overlay Canvas Helpers ===
+    function hideOverlayCanvas() {
+      const cv = document.getElementById('pro_route_canvas');
+      if (cv) cv.style.display = 'none';
+    }
+
+    function showOverlayCanvas() {
+      const cv = document.getElementById('pro_route_canvas');
+      if (cv) cv.style.display = '';
+    }
+
+    // ...existing code...
+  })();
+
+  // === DOM Observation & Event Handling ===
+
+  // === DOM Observation Helpers ===
+  function observeImage(img) {
+    if (!img) return;
+    if (imageObserver) imageObserver.disconnect();
+    lastImgSrc = img.src;
+    // Draw route immediately when image element appears
+    redrawIfBothReady();
+    imageObserver = new MutationObserver(() => {
+      if (img.src !== lastImgSrc) {
+        lastImgSrc = img.src;
+        hideAndClear();
+        img.addEventListener('load', redrawIfBothReady, { once: true });
+      }
+    });
+    imageObserver.observe(img, { attributes: true, attributeFilter: ['src'] });
+    if (!img.complete) {
+      hideAndClear();
+      img.addEventListener('load', redrawIfBothReady, { once: true });
+    }
+  }
+
+  function observeSubregionBtn(btn) {
+    if (!btn) return;
+    if (buttonObserver) buttonObserver.disconnect();
+    const currentLabel = btn.getAttribute('aria-label');
+    console.log('[PRO][content] Attaching MutationObserver to subregion button:', currentLabel);
+    // ...existing code...
+  }
+
+  // Attach observers for map image and subregion button
+  function attachObservers() {
+    const img = getBetaMapImage();
+    observeImage(img);
+    // Robust polling for subregion button
+    let lastBtn = null;
+    setInterval(() => {
+      const btn = Array.from(document.querySelectorAll('div[class$="_modelZoom"] button[aria-label^="Zoom: "]'))[0];
+      if (btn !== lastBtn) {
+        lastBtn = btn;
+        if (btn) {
+          console.log('[PRO][content] Attaching subregion observer to button with aria-label:', btn.getAttribute('aria-label'));
+          observeSubregionBtn(btn);
+        }
+      }
+    }, 500);
+    // Attach observer to parent of subregion button
+    const zoomDiv = lastBtn ? lastBtn.closest('div[class$="_modelZoom"]') : document.querySelector('div[class$="_modelZoom"]');
+    if (zoomDiv) {
+      if (zoomParentObserver) zoomParentObserver.disconnect();
+      zoomParentObserver = new MutationObserver(() => {
+        // Button may have been replaced, re-attach attribute observer
+        const newBtn = zoomDiv.querySelector('button[aria-label^="Zoom: "]');
+        if (newBtn) {
+          console.log('[PRO][content] Attaching subregion observer to button with aria-label:', newBtn.getAttribute('aria-label'));
+          observeSubregionBtn(newBtn);
+        }
+      });
+      zoomParentObserver.observe(zoomDiv, { childList: true, subtree: true });
+    }
+  }
+
+  // === Initialization ===
+  // Call attachObservers on script load
+  attachObservers();
+  // Helper: update sidebar input for map area
+  function updateSidebarInput(mapArea) {
+    const mapAreaInput = document.getElementById('pro-map-area');
+    if (mapAreaInput) mapAreaInput.value = mapArea;
+  }
+
+  // Helper: redraw or clear route if present
+  function redrawRouteIfPresent({ restore = false } = {}) {
+    const route = (document.getElementById('pro-route')||{}).value||'';
+    const color = (document.getElementById('pro-color')||{}).value||'#ff0000';
+    const width = parseInt((document.getElementById('pro-width')||{}).value||'3',10);
+    if (route.trim()) {
+      if (restore) {
+        drawRouteFromString(route, color, width, 'restore');
+      } else {
+        drawRouteFromString(route, color, width);
+      }
+    } else {
+      window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+    }
+  }
   function getBetaMapImage(){
     const mapContainers = Array.from(document.querySelectorAll('div[class$="_mapContainer"]'));
     for (const div of mapContainers) {
@@ -31,27 +265,7 @@ window.detectMapArea = function detectMapArea() {
     return null;
   }
   let lastSrc = null;
-  function detectMapArea() {
-    // Classic UI
-    let mapArea = '';
-    const zoomMenu = document.getElementById('zoom_menu_link');
-    if (zoomMenu && zoomMenu.textContent) {
-      mapArea = zoomMenu.textContent.trim();
-    }
-    // Beta UI: look for button with aria-label starting with "Zoom: " inside a div with class ending _modelZoom
-    if (!mapArea) {
-      const modelZoomDiv = Array.from(document.querySelectorAll('div[class$="_modelZoom"]')).find(div => div.querySelector('button[aria-label^="Zoom: "]'));
-      if (modelZoomDiv) {
-        const btn = modelZoomDiv.querySelector('button[aria-label^="Zoom: "]');
-        if (btn && btn.getAttribute('aria-label')) {
-          const label = btn.getAttribute('aria-label');
-          const match = label.match(/Zoom: (.+)$/);
-          if (match) mapArea = match[1].trim();
-        }
-      }
-    }
-    return mapArea;
-  }
+  // Use window.detectMapArea throughout the file
 
   function redrawIfNeeded(){
     const img = getBetaMapImage();
@@ -60,17 +274,9 @@ window.detectMapArea = function detectMapArea() {
       lastSrc = img.src;
       // Re-detect map area and update sidebar input
       const mapArea = detectMapArea();
-      const mapAreaInput = document.getElementById('pro-map-area');
-      if (mapAreaInput) mapAreaInput.value = mapArea;
+      updateSidebarInput(mapArea);
       // Reparse and redraw route if present
-      const route = (document.getElementById('pro-route')||{}).value||'';
-      const color = (document.getElementById('pro-color')||{}).value||'#ff0000';
-      const width = parseInt((document.getElementById('pro-width')||{}).value||'3',10);
-      if (route.trim()) {
-        drawRouteFromString(route, color, width, 'restore');
-      } else {
-        window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
-      }
+      redrawRouteIfPresent({ restore: true });
     }
   }
   // Observe map container for child changes and image loads
@@ -93,17 +299,17 @@ window.detectMapArea = function detectMapArea() {
         const mapAreaInput = document.getElementById('pro-map-area');
         if (match && mapAreaInput && mapAreaInput.value !== match[1].trim()) {
           mapAreaInput.value = match[1].trim();
-          console.log('[PRO][content] Sidebar pro-map-area input polled and updated to:', mapAreaInput.value);
+          proDebugLog('[PRO][content] Sidebar pro-map-area input polled and updated to:', mapAreaInput.value);
         }
       }
     }, 500);
 
   let lastImgSrc = null;
   let lastSubregion = null;
-  let imgMo = null;
-  let btnMo = null;
-  let parentMo = null;
-  let zoomParentMo = null;
+  let imageObserver = null;
+  let buttonObserver = null;
+  let parentObserver = null;
+  let zoomParentObserver = null;
     function hideAndClear() {
       hideOverlayCanvas();
       window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
@@ -126,116 +332,78 @@ window.detectMapArea = function detectMapArea() {
     }
     function observeImage(img) {
       if (!img) return;
-      if (imgMo) imgMo.disconnect();
+      if (imageObserver) imageObserver.disconnect();
       lastImgSrc = img.src;
       // Draw route immediately when image element appears
       redrawIfBothReady();
-      imgMo = new MutationObserver(() => {
+      imageObserver = new MutationObserver(() => {
         if (img.src !== lastImgSrc) {
           lastImgSrc = img.src;
           hideAndClear();
           img.addEventListener('load', redrawIfBothReady, { once: true });
         }
       });
-      imgMo.observe(img, { attributes: true, attributeFilter: ['src'] });
+      imageObserver.observe(img, { attributes: true, attributeFilter: ['src'] });
       if (!img.complete) {
         hideAndClear();
         img.addEventListener('load', redrawIfBothReady, { once: true });
       }
     }
     function observeSubregionBtn(btn) {
-      if (!btn) return;
-      if (btnMo) btnMo.disconnect();
+  if (!btn) return;
+  if (buttonObserver) buttonObserver.disconnect();
       const currentLabel = btn.getAttribute('aria-label');
       console.log('[PRO][content] Attaching MutationObserver to subregion button:', currentLabel);
       // Immediately check if subregion has changed
       if (lastSubregion !== null && currentLabel !== lastSubregion) {
-        console.log('[PRO][content] Subregion changed (immediate check):', currentLabel);
+  proDebugLog('[PRO][content] Subregion changed (immediate check):', currentLabel);
         lastSubregion = currentLabel;
         hideOverlayCanvas();
         window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
-        // Force update sidebar input for map area
-        const mapAreaInput = document.getElementById('pro-map-area');
+        // Update sidebar input for map area
         let newArea = '';
-        if (mapAreaInput) {
-          const match = currentLabel.match(/Zoom: (.+)$/);
-          if (match) {
-            newArea = match[1].trim();
-            mapAreaInput.value = newArea;
-            console.log('[PRO][content] Updated pro-map-area input to:', mapAreaInput.value);
-          }
+        const match = currentLabel.match(/Zoom: (.+)$/);
+        if (match) {
+          newArea = match[1].trim();
+          updateSidebarInput(newArea);
+          proDebugLog('[PRO][content] Updated pro-map-area input to:', newArea);
         }
         // Re-attach image observer to new map image after subregion change
-        setTimeout(() => {
-          const img = getBetaMapImage();
-          observeImage(img);
-          // If image is already loaded and src is present, trigger redraw immediately
-          if (img && img.complete && img.src) {
-            redrawIfBothReady();
-          }
-        }, 100);
-        // Wait for sidebar input to match newArea before drawing
-        let tries = 0;
-        function waitAndDraw() {
-          const mapAreaInput = document.getElementById('pro-map-area');
-          if (mapAreaInput && mapAreaInput.value === newArea) {
-            // Use last route if available
-            let routeStr = (document.getElementById('pro-route')||{}).value||'';
-            let color = (document.getElementById('pro-color')||{}).value||'#ff0000';
-            let width = parseInt((document.getElementById('pro-width')||{}).value||'3',10);
-            if (!routeStr.trim() && window.__PRO_LAST_ROUTE) {
-              routeStr = window.__PRO_LAST_ROUTE.route;
-              color = window.__PRO_LAST_ROUTE.color;
-              width = window.__PRO_LAST_ROUTE.width;
-            }
-            if (routeStr && routeStr.trim()) {
-              parseRoute(routeStr).then(parsed => {
-                if (!parsed.error) {
-                  console.log('[PRO][content] Drawing route after subregion change');
-                  drawRoute(parsed, { color, width });
-                  showOverlayCanvas();
-                } else {
-                  window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
-                }
-              });
-            } else {
-              window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
-            }
-          } else if (tries < 20) {
-            tries++;
-            setTimeout(waitAndDraw, 25);
-          } else {
-            console.warn('[PRO][content] Sidebar input did not update in time, drawing anyway.');
-            let routeStr = (document.getElementById('pro-route')||{}).value||'';
-            let color = (document.getElementById('pro-color')||{}).value||'#ff0000';
-            let width = parseInt((document.getElementById('pro-width')||{}).value||'3',10);
-            if (!routeStr.trim() && window.__PRO_LAST_ROUTE) {
-              routeStr = window.__PRO_LAST_ROUTE.route;
-              color = window.__PRO_LAST_ROUTE.color;
-              width = window.__PRO_LAST_ROUTE.width;
-            }
-            if (routeStr && routeStr.trim()) {
-              parseRoute(routeStr).then(parsed => {
-                if (!parsed.error) {
-                  console.log('[PRO][content] Drawing route after subregion change (poll fallback)');
-                  drawRoute(parsed, { color, width });
-                  showOverlayCanvas();
-                } else {
-                  window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
-                }
-              });
-            } else {
-              window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
-            }
-          }
+        const img = getBetaMapImage();
+        observeImage(img);
+        // Draw route immediately if image is loaded
+        let routeStr = (document.getElementById('pro-route')||{}).value||'';
+        let color = (document.getElementById('pro-color')||{}).value||'#ff0000';
+        let width = parseInt((document.getElementById('pro-width')||{}).value||'3',10);
+        if (!routeStr.trim() && window.__PRO_LAST_ROUTE) {
+          routeStr = window.__PRO_LAST_ROUTE.route;
+          color = window.__PRO_LAST_ROUTE.color;
+          width = window.__PRO_LAST_ROUTE.width;
         }
-        waitAndDraw();
+        if (img && img.complete && img.src && routeStr && routeStr.trim()) {
+          parseRoute(routeStr)
+            .then(parsed => {
+              if (!parsed.error) {
+                proDebugLog('[PRO][content] Drawing route after subregion change');
+                drawRoute(parsed, { color, width });
+                showOverlayCanvas();
+              } else {
+                window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+              }
+            })
+            .catch(err => {
+              proDebugLog('[PRO][content] Error parsing route:', err);
+              window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+            });
+        } else {
+          window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+        }
       }
       lastSubregion = currentLabel;
-      btnMo = new MutationObserver(() => {
+  buttonObserver = new MutationObserver(() => {
         const label = btn.getAttribute('aria-label');
         if (label !== lastSubregion) {
-          console.log('[PRO][content] Subregion changed (MutationObserver):', label);
+          proDebugLog('[PRO][content] Subregion changed (MutationObserver):', label);
           lastSubregion = label;
           // Immediately clear/hide overlay
           hideOverlayCanvas();
@@ -248,7 +416,7 @@ window.detectMapArea = function detectMapArea() {
             if (match) {
               newArea = match[1].trim();
               mapAreaInput.value = newArea;
-              console.log('[PRO][content] Updated pro-map-area input to:', mapAreaInput.value);
+              proDebugLog('[PRO][content] Updated pro-map-area input to:', mapAreaInput.value);
             }
           }
           // Wait for sidebar input to match newArea before drawing
@@ -263,12 +431,15 @@ window.detectMapArea = function detectMapArea() {
               if (routeStr.trim()) {
                 parseRoute(routeStr).then(parsed => {
                   if (!parsed.error) {
-                    console.log('[PRO][content] Drawing route after subregion change');
+                    proDebugLog('[PRO][content] Drawing route after subregion change');
                     drawRoute(parsed, { color, width });
                     showOverlayCanvas();
                   } else {
                     window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
                   }
+                }).catch(err => {
+                  proDebugLog('[PRO][content] Error parsing route:', err);
+                  window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
                 });
               } else {
                 window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
@@ -285,12 +456,15 @@ window.detectMapArea = function detectMapArea() {
               if (routeStr.trim()) {
                 parseRoute(routeStr).then(parsed => {
                   if (!parsed.error) {
-                    console.log('[PRO][content] Drawing route after subregion change (poll fallback)');
+                    proDebugLog('[PRO][content] Drawing route after subregion change (poll fallback)');
                     drawRoute(parsed, { color, width });
                     showOverlayCanvas();
                   } else {
                     window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
                   }
+                }).catch(err => {
+                  proDebugLog('[PRO][content] Error parsing route:', err);
+                  window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
                 });
               } else {
                 window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
@@ -300,7 +474,7 @@ window.detectMapArea = function detectMapArea() {
           waitAndDraw();
         }
       });
-      btnMo.observe(btn, { attributes: true, attributeFilter: ['aria-label'] });
+  buttonObserver.observe(btn, { attributes: true, attributeFilter: ['aria-label'] });
       // Fallback polling for aria-label changes
       if (!btn._pro_polling) {
         btn._pro_polling = true;
@@ -309,7 +483,7 @@ window.detectMapArea = function detectMapArea() {
           if (!document.body.contains(btn)) return;
           const label = btn.getAttribute('aria-label');
           if (label !== lastSubregion) {
-            console.log('[PRO][content] Subregion changed (poll):', label);
+            proDebugLog('[PRO][content] Subregion changed (poll):', label);
             lastSubregion = label;
             // Force update sidebar input for map area
             const mapAreaInput = document.getElementById('pro-map-area');
@@ -319,7 +493,7 @@ window.detectMapArea = function detectMapArea() {
               if (match) {
                 newArea = match[1].trim();
                 mapAreaInput.value = newArea;
-                console.log('[PRO][content] Updated pro-map-area input to:', mapAreaInput.value);
+                proDebugLog('[PRO][content] Updated pro-map-area input to:', mapAreaInput.value);
               }
             }
             // Wait for sidebar input to match newArea before drawing
@@ -335,12 +509,15 @@ window.detectMapArea = function detectMapArea() {
                 if (routeStr.trim()) {
                   parseRoute(routeStr).then(parsed => {
                     if (!parsed.error) {
-                      console.log('[PRO][content] Drawing route after subregion change (poll fallback)');
+                      proDebugLog('[PRO][content] Drawing route after subregion change (poll fallback)');
                       drawRoute(parsed, { color, width });
                       showOverlayCanvas();
                     } else {
                       window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
                     }
+                  }).catch(err => {
+                    proDebugLog('[PRO][content] Error parsing route:', err);
+                    window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
                   });
                 } else {
                   window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
@@ -359,12 +536,15 @@ window.detectMapArea = function detectMapArea() {
                 if (routeStr.trim()) {
                   parseRoute(routeStr).then(parsed => {
                     if (!parsed.error) {
-                      console.log('[PRO][content] Drawing route after subregion change (poll fallback)');
+                      proDebugLog('[PRO][content] Drawing route after subregion change (poll fallback)');
                       drawRoute(parsed, { color, width });
                       showOverlayCanvas();
                     } else {
                       window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
                     }
+                  }).catch(err => {
+                    proDebugLog('[PRO][content] Error parsing route:', err);
+                    window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
                   });
                 } else {
                   window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
@@ -388,7 +568,7 @@ window.detectMapArea = function detectMapArea() {
         if (btn !== lastBtn) {
           lastBtn = btn;
           if (btn) {
-            console.log('[PRO][content] Attaching subregion observer to button with aria-label:', btn.getAttribute('aria-label'));
+            proDebugLog('[PRO][content] Attaching subregion observer to button with aria-label:', btn.getAttribute('aria-label'));
             observeSubregionBtn(btn);
           }
         }
@@ -396,24 +576,24 @@ window.detectMapArea = function detectMapArea() {
       // Attach observer to parent of subregion button
       const zoomDiv = lastBtn ? lastBtn.closest('div[class$="_modelZoom"]') : document.querySelector('div[class$="_modelZoom"]');
       if (zoomDiv) {
-        if (zoomParentMo) zoomParentMo.disconnect();
-        zoomParentMo = new MutationObserver(() => {
+  if (zoomParentObserver) zoomParentObserver.disconnect();
+  zoomParentObserver = new MutationObserver(() => {
           // Button may have been replaced, re-attach attribute observer
           const newBtn = zoomDiv.querySelector('button[aria-label^="Zoom: "]');
           if (newBtn) {
-            console.log('[PRO][content] Attaching subregion observer to button with aria-label:', newBtn.getAttribute('aria-label'));
+            proDebugLog('[PRO][content] Attaching subregion observer to button with aria-label:', newBtn.getAttribute('aria-label'));
             observeSubregionBtn(newBtn);
           }
         });
-        zoomParentMo.observe(zoomDiv, { childList: true, subtree: true });
+  zoomParentObserver.observe(zoomDiv, { childList: true, subtree: true });
       }
     }
     function observeParent() {
       // Find a stable parent container for both map image and subregion button
       const mapContainer = document.querySelector('div[class$="_mapContainer"]');
       if (!mapContainer) return;
-      if (parentMo) parentMo.disconnect();
-      parentMo = new MutationObserver((mutations) => {
+  if (parentObserver) parentObserver.disconnect();
+  parentObserver = new MutationObserver((mutations) => {
         let relevant = false;
         for (const m of mutations) {
           if (m.type === 'childList' || m.type === 'subtree') {
@@ -430,7 +610,7 @@ window.detectMapArea = function detectMapArea() {
           attachObservers();
         }
       });
-      parentMo.observe(mapContainer, { childList: true, subtree: true, attributes: true });
+  parentObserver.observe(mapContainer, { childList: true, subtree: true, attributes: true });
       // Initial attach
       attachObservers();
     }
