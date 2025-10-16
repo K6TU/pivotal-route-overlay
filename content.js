@@ -1,4 +1,18 @@
+// Ensure getIndexes returns real data for route parsing
+if (typeof window.getIndexes !== 'function') {
+  window.getIndexes = async function() {
+    const st = await chrome.storage.local.get(['PRO_AIRPORT_INDEX', 'PRO_NAV_INDEX', 'PRO_FIX_INDEX']);
+    return {
+      airports: st.PRO_AIRPORT_INDEX || {},
+      navaids: st.PRO_NAV_INDEX || {},
+      fixes: st.PRO_FIX_INDEX || {}
+    };
+  };
+}
 // Ensure Map Area input is set after DOM and helpers are ready
+
+// Global observer for map image
+let imageObserver = null;
 document.addEventListener('DOMContentLoaded', function() {
   setTimeout(function() {
     if (window.updateSidebarInput && window.detectMapArea) {
@@ -11,17 +25,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
 // Main orchestration logic
-
-function hideOverlayCanvas() {
-  const cv = document.getElementById('pro_route_canvas');
-  if (cv) cv.style.display = 'none';
-}
-
-function showOverlayCanvas() {
-  const cv = document.getElementById('pro_route_canvas');
-  if (cv) cv.style.display = '';
-}
-
 
 function redrawIfBothReady() {
   const img = window.getBetaMapImage();
@@ -36,7 +39,13 @@ function redrawIfBothReady() {
   const routeInputVal = (document.getElementById('pro-route') || {}).value || '';
   const colorInputVal = (document.getElementById('pro-color') || {}).value || '#ff0000';
   const widthInputVal = parseInt((document.getElementById('pro-width') || {}).value || '3', 10);
-  const route = lastRouteObj.route || routeInputVal;
+  // Only use route if either global or input is non-empty
+  let route = '';
+  if (lastRouteObj.route && lastRouteObj.route.trim()) {
+    route = lastRouteObj.route;
+  } else if (routeInputVal && routeInputVal.trim()) {
+    route = routeInputVal;
+  }
   const color = lastRouteObj.color || colorInputVal;
   const width = lastRouteObj.width || widthInputVal;
   window.__PRO_LAST_DRAWN_ROUTE = window.__PRO_LAST_DRAWN_ROUTE || '';
@@ -48,9 +57,10 @@ function redrawIfBothReady() {
     currentMapArea = mapAreaInput.value.trim();
   }
   // Only redraw if route is non-empty and either route or map area changed
-  if (!route.trim()) {
-    console.log('[PRO][redrawIfBothReady] No route to draw, clearing.');
-    window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+  if (!route || !route.trim()) {
+    // Prevent redraw if both global and input route are empty
+    console.log('[PRO][redrawIfBothReady] No route to draw, skipping redraw and clearing overlay.');
+  window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
     return;
   }
   if (route === window.__PRO_LAST_DRAWN_ROUTE && currentMapArea === window.__PRO_LAST_DRAWN_MAPAREA) {
@@ -60,7 +70,7 @@ function redrawIfBothReady() {
   // If the map area changed, clear the previous route line immediately
   if (currentMapArea !== window.__PRO_LAST_DRAWN_MAPAREA) {
     console.log('[PRO][redrawIfBothReady] Map area changed, clearing previous route line and scheduling redraw.');
-    window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+  window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
     window.__PRO_LAST_DRAWN_MAPAREA = currentMapArea;
     window.__PRO_LAST_DRAWN_ROUTE = '';
     setTimeout(() => {
@@ -70,7 +80,6 @@ function redrawIfBothReady() {
           window.drawRoute(parsed, { color, width });
           window.__PRO_LAST_DRAWN_ROUTE = route;
           window.__PRO_LAST_DRAWN_MAPAREA = currentMapArea;
-          showOverlayCanvas();
         } else {
           console.log('[PRO][redrawIfBothReady] Route invalid for new region, still clearing. Parse error:', parsed.error);
           window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
@@ -79,7 +88,7 @@ function redrawIfBothReady() {
         }
       }).catch((err) => {
         console.log('[PRO][redrawIfBothReady] Exception during parseRoute:', err);
-        window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+  window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
         window.__PRO_LAST_DRAWN_MAPAREA = currentMapArea;
         window.__PRO_LAST_DRAWN_ROUTE = '';
       });
@@ -89,144 +98,87 @@ function redrawIfBothReady() {
   window.parseRoute(route, getIndexes).then(parsed => {
     if (!parsed.error) {
       console.log('[PRO][redrawIfBothReady] Drawing route:', parsed, { color, width, mapArea: currentMapArea });
-      window.drawRoute(parsed, { color, width });
+  window.postMessage({ PRO_OVERLAY_CMD: 'DRAW', detail: Object.assign({}, parsed, { color, width }) }, '*');
       window.__PRO_LAST_DRAWN_ROUTE = route;
       window.__PRO_LAST_DRAWN_MAPAREA = currentMapArea;
-      showOverlayCanvas();
     } else {
       console.log('[PRO][redrawIfBothReady] Parse error:', parsed.error);
-      window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+  window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
     }
   }).catch((err) => {
     console.log('[PRO][redrawIfBothReady] Exception during parseRoute:', err);
-    window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+  window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
   });
 }
 
 
 function hideAndClear() {
-  hideOverlayCanvas();
-  window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+  window.postMessage({ PRO_OVERLAY_CMD: 'CLEAR' }, '*');
 }
 
 
+// Unified attachObservers function (merged logic)
 function attachObservers() {
   const img = window.getBetaMapImage();
   window.observeImage(img, redrawIfBothReady, hideAndClear);
+  // Robust polling for subregion button
   let lastBtn = null;
-  let subregionObserver = null;
   setInterval(() => {
     const btn = Array.from(document.querySelectorAll('div[class$="_modelZoom"] button[aria-label^="Zoom: "]'))[0];
     if (btn !== lastBtn) {
-      if (subregionObserver) {
-        subregionObserver.disconnect();
-        subregionObserver = null;
-      }
       lastBtn = btn;
       if (btn) {
         window.proDebugLog('[PRO][content] Attaching subregion observer to button with aria-label:', btn.getAttribute('aria-label'));
-        // Always update Map Area input immediately
-        if (window.updateSidebarInput && window.detectMapArea) {
-          window.updateSidebarInput(window.detectMapArea());
-        }
-        // Attach a fresh observer
-        let lastLabel = btn.getAttribute('aria-label');
-        subregionObserver = new MutationObserver(() => {
-          const newLabel = btn.getAttribute('aria-label');
-          if (newLabel !== lastLabel) {
-            lastLabel = newLabel;
-            window.proDebugLog('[PRO][content] Subregion changed:', newLabel);
-            if (window.updateSidebarInput && window.detectMapArea) {
-              window.updateSidebarInput(window.detectMapArea());
+        // Wait for window.observeSubregionBtn to be defined
+        const tryAttach = (tries = 0) => {
+          if (typeof window.observeSubregionBtn === 'function') {
+            console.log('[PRO][content.js] Calling observeSubregionBtn with:', btn, 'aria-label:', btn.getAttribute('aria-label'));
+            window.observeSubregionBtn(btn, redrawIfBothReady, hideAndClear);
+            // Immediately trigger redraw since the region may have changed
+            if (typeof redrawIfBothReady === 'function') {
+              setTimeout(() => { redrawIfBothReady(); }, 0);
             }
-            // Wait for both map image and subregion, then redraw
-            if (typeof waitForMapAndSubregion === 'function') {
-              waitForMapAndSubregion(window.detectMapArea(), redrawIfBothReady);
-            } else {
-              redrawIfBothReady();
-            }
+          } else if (tries < 20) {
+            setTimeout(() => tryAttach(tries + 1), 100);
+          } else {
+            window.proDebugLog('[PRO][content] ERROR: observeSubregionBtn not available after waiting. Global keys:', Object.keys(window));
           }
-        });
-        subregionObserver.observe(btn, { attributes: true, attributeFilter: ['aria-label'] });
+        };
+        tryAttach();
       }
     }
-  }, 1000);
+  }, 500);
+  // Attach observer to parent of subregion button
+  // const zoomDiv = lastBtn ? lastBtn.closest('div[class$="_modelZoom"]') : document.querySelector('div[class$="_modelZoom"]');
+  const zoomDiv = lastBtn.closest('div[class$="_toolbarSectionInner"]');
+  console.log(zoomDiv);
+  if (zoomDiv) {
+    if (window.zoomParentObserver) window.zoomParentObserver.disconnect();
+    window.zoomParentObserver = new MutationObserver(() => {
+      console.log('[PRO][content] Replacement callback fired');
+      // Button may have been replaced, re-attach attribute observer
+      const newBtn = zoomDiv.querySelector('button[aria-label^="Zoom: "]');
+      if (newBtn) {
+        window.proDebugLog('[PRO][content] Attaching subregion observer to button with aria-label:', newBtn.getAttribute('aria-label'));
+        console.log('[PRO][content.js] Calling observeSubregionBtn with:', newBtn, 'aria-label:', newBtn.getAttribute('aria-label'));
+        window.observeSubregionBtn(newBtn, redrawIfBothReady, hideAndClear);
+      }
+    });
+    window.zoomParentObserver.observe(zoomDiv, { childList: true, subtree: true });
+  }
 }
 
-// Call attachObservers on script load
-attachObservers();
+// Delay initial observer attachment and redraw until overlay is ready
+window.addEventListener('PRO_INJECTED_READY', () => {
+  attachObservers();
+  // Optionally trigger initial redraw after overlay is ready
+  setTimeout(() => { redrawIfBothReady(); }, 0);
+});
 
   // === DOM Observation & Event Handling ===
 
-  // === DOM Observation Helpers ===
-  function observeImage(img) {
-    if (!img) return;
-    if (imageObserver) imageObserver.disconnect();
-    lastImgSrc = img.src;
-    // Draw route immediately when image element appears
-    redrawIfBothReady();
-    imageObserver = new MutationObserver(() => {
-      if (img.src !== lastImgSrc) {
-        lastImgSrc = img.src;
-        hideAndClear();
-        img.addEventListener('load', redrawIfBothReady, { once: true });
-      }
-    });
-    imageObserver.observe(img, { attributes: true, attributeFilter: ['src'] });
-    if (!img.complete) {
-      hideAndClear();
-      img.addEventListener('load', redrawIfBothReady, { once: true });
-    }
-  }
-
-
-  // Attach observers for map image and subregion button
-  function attachObservers() {
-    const img = window.getBetaMapImage();
-    window.observeImage(img, redrawIfBothReady, hideAndClear);
-    // Robust polling for subregion button
-    let lastBtn = null;
-    setInterval(() => {
-      const btn = Array.from(document.querySelectorAll('div[class$="_modelZoom"] button[aria-label^="Zoom: "]'))[0];
-      if (btn !== lastBtn) {
-        lastBtn = btn;
-        if (btn) {
-              window.proDebugLog('[PRO][content] Attaching subregion observer to button with aria-label:', btn.getAttribute('aria-label'));
-              // Wait for window.observeSubregionBtn to be defined
-              const tryAttach = (tries = 0) => {
-                if (typeof window.observeSubregionBtn === 'function') {
-                  console.log('[PRO][content.js] Calling observeSubregionBtn with:', btn, 'aria-label:', btn.getAttribute('aria-label'));
-                  window.observeSubregionBtn(btn, redrawIfBothReady, hideAndClear);
-                } else if (tries < 20) {
-                  setTimeout(() => tryAttach(tries + 1), 100);
-                } else {
-                  window.proDebugLog('[PRO][content] ERROR: observeSubregionBtn not available after waiting. Global keys:', Object.keys(window));
-                }
-              };
-              tryAttach();
-        }
-      }
-    }, 2000);
-    // Attach observer to parent of subregion button
-    const zoomDiv = lastBtn ? lastBtn.closest('div[class$="_modelZoom"]') : document.querySelector('div[class$="_modelZoom"]');
-    if (zoomDiv) {
-      if (window.zoomParentObserver) window.zoomParentObserver.disconnect();
-      window.zoomParentObserver = new MutationObserver(() => {
-        // Button may have been replaced, re-attach attribute observer
-        const newBtn = zoomDiv.querySelector('button[aria-label^="Zoom: "]');
-        if (newBtn) {
-          window.proDebugLog('[PRO][content] Attaching subregion observer to button with aria-label:', newBtn.getAttribute('aria-label'));
-          console.log('[PRO][content.js] Calling observeSubregionBtn with:', newBtn, 'aria-label:', newBtn.getAttribute('aria-label'));
-          window.observeSubregionBtn(newBtn, redrawIfBothReady, hideAndClear);
-        }
-      });
-      window.zoomParentObserver.observe(zoomDiv, { childList: true, subtree: true });
-    }
-  }
-
-  // === Initialization ===
-  // Call attachObservers on script load
-  attachObservers();
+// === DOM Observation Helpers ===
+// Use global observeImage from observers.js via window.observeImage
   // Helper: update sidebar input for map area
   function updateSidebarInput(mapArea) {
     const mapAreaInput = document.getElementById('pro-map-area');
@@ -283,7 +235,9 @@ attachObservers();
     if (titleEl) titleEl.textContent = `PRO v${proVersion}`;
   };
 
-  const s=document.createElement('script'); s.src=chrome.runtime.getURL('injected.js'); (document.head||document.documentElement).appendChild(s); s.onload=()=>s.remove();
+  const s=document.createElement('script'); 
+  s.src=chrome.runtime.getURL('injected.js'); 
+  (document.head||document.documentElement).appendChild(s); s.onload=()=>s.remove();
 
   const box=document.createElement('div');
   box.id='pro-overlay-ui';
@@ -437,6 +391,7 @@ attachObservers();
   })();
 
   // Now log the version to the status area
+
   // Reference to draw button
   const drawBtn = box.querySelector('#pro-draw');
   // Disable draw button if not on model.php page
@@ -444,7 +399,32 @@ attachObservers();
     drawBtn.disabled = true;
     drawBtn.style.opacity = '0.6';
   }
+  // Attach click handler to Parse & Draw button
+  if (drawBtn) {
+    drawBtn.addEventListener('click', () => {
+      const routeStr = (document.getElementById('pro-route') || {}).value || '';
+      const color = (document.getElementById('pro-color') || {}).value || '#ff0000';
+      const width = parseInt((document.getElementById('pro-width') || {}).value || '3', 10);
+      // Parse and send to overlay
+      window.drawRouteFromString(routeStr, color, width);
+      // Persist route immediately after drawing
+      if (typeof window.saveLastRoute === 'function') {
+        window.saveLastRoute(routeStr, color, width);
+        if (typeof debugLog === 'function') debugLog('Parse & Draw: Route persisted to sessionStorage');
+      } else {
+        if (typeof debugLog === 'function') debugLog('Parse & Draw: saveLastRoute not available');
+      }
+    });
+  }
   logVersionToStatus();
+
+  // Attach click handler to Clear button
+const clearBtn = box.querySelector('#pro-clear');
+if (clearBtn) {
+  clearBtn.addEventListener('click', () => {
+    window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+  });
+}
 
   const logEl=box.querySelector('#pro-log');
   // Debug checkbox logic
@@ -460,6 +440,7 @@ attachObservers();
   debugCheckbox.addEventListener('change', () => {
   debugEnabled = debugCheckbox.checked;
   window.PRO_DEBUG = debugEnabled;
+  // Dispatch event on window for injected.js
   window.dispatchEvent(new CustomEvent('PRO_DEBUG_CHANGED', { detail: { enabled: debugEnabled } }));
   chrome.storage.local.set({ PRO_DEBUG: debugEnabled });
   });
@@ -565,9 +546,9 @@ attachObservers();
       // Use latest mapAreaValue for redraw
       const mapAreaInput = document.getElementById('pro-map-area');
       let mapAreaValue = mapAreaInput ? mapAreaInput.value : '';
-      const parsed = await parseRoute(cached.route);
+      const parsed = await window.parseRoute(cached.route);
       if (!parsed.error) {
-        drawRoute(parsed, { color: cached.color||'#ff0000', width: cached.width||3, mapAreaValue });
+  window.drawRoute(parsed, { color: cached.color||'#ff0000', width: cached.width||3, mapAreaValue });
       }
     } catch(e){ console.warn('[PRO][content] restore failed', e); if (typeof setStatus==='function') setStatus('Route restore failed: '+(e.message||e)); }
         }
@@ -608,244 +589,40 @@ attachObservers();
 })();
 
 
-  async function getIndexes(){
-    const o=await chrome.storage.local.get(['PRO_AIRPORT_INDEX','PRO_NAV_INDEX','PRO_FIX_INDEX']);
-    return {airports:o.PRO_AIRPORT_INDEX||{}, navaids:o.PRO_NAV_INDEX||{}, fixes:o.PRO_FIX_INDEX||{}};
-  }
-  window.getIndexes = getIndexes;
-  const BOUNDS={ latMax:59, latMin:21, lonMin:-129, lonMax:-64 };
-  function interp(A,B,n){ const out=[]; for(let i=0;i<n;i++){ const t=i/(n-1); out.push([A[0]+(B[0]-A[0])*t, A[1]+(B[1]-A[1])*t]); } return out; }
 
-  async function parseRoute(str){
-    if(!str||!str.trim()) throw new Error('Enter a route first');
-    const toks=str.trim().toUpperCase().split(/\s+/);
-    const {airports,navaids,fixes}=await getIndexes();
-    function findAirport(tok){
-      if(/^[A-Z]{4}$/.test(tok)){
-        const a=airports[tok]; if(a) return [a.lat,a.lon,tok];
-      }
-      const a=airports['A/'+tok]; if(a) return [a.lat,a.lon,tok];
-      return null;
-    }
-    function findFix(tok){ const f=fixes[tok]; if(f) return [f.lat,f.lon,tok]; return null; }
-    function findVOR(tok){ const v=navaids[tok]; if(v) return [v.lat,v.lon,tok]; return null; }
-
-    const points=[];
-    for(const tok of toks){
-      let p=null;
-      if(/^[A-Z]{4}$/.test(tok) || /^A\/[A-Z0-9]{3,4}$/.test(tok)){ p=findAirport(tok); }
-      if(!p && /^[A-Z]{5}$/.test(tok)) p=findFix(tok);
-      if(!p && /^[A-Z]{3}$/.test(tok)) p=findVOR(tok);
-      if(!p && /^[A-Z0-9]{3,4}$/.test(tok)) { const a=airports['A/'+tok]; if(a) p=[a.lat,a.lon,tok]; }
-      if(!p) return {error:tok};
-      points.push(p);
-    }
-    if(points.length<2) return {error:'Could not resolve enough waypoints.'};
-    const latlngs=[];
-    for(let i=0;i<points.length-1;i++){
-      latlngs.push(...interp([points[i][0],points[i][1]],[points[i+1][0],points[i+1][1]], 25));
-    }
-    const wps=points.map(p=>({id:p[2], lat:p[0], lon:p[1]}));
-    return { waypoints:wps, latlngs };
-  }
-
-  // Cohen–Sutherland clipping codes
-  function getClipCode(lat, lon, bounds) {
-    let code = 0;
-    if (lat > bounds.latMax) code |= 1; // above
-    if (lat < bounds.latMin) code |= 2; // below
-    if (lon < bounds.lonMin) code |= 4; // left
-    if (lon > bounds.lonMax) code |= 8; // right
-    return code;
-  }
-
-  // Clip a line segment to bounds, returns [p1, p2] or null if not visible
-  function clipSegment(p1, p2, bounds) {
-    let [lat1, lon1] = p1;
-    let [lat2, lon2] = p2;
-    let code1 = getClipCode(lat1, lon1, bounds);
-    let code2 = getClipCode(lat2, lon2, bounds);
-    while (true) {
-      if (!(code1 | code2)) {
-        return [[lat1, lon1], [lat2, lon2]]; // both inside
-      } else if (code1 & code2) {
-        return null; // both outside, same region
-      } else {
-        let codeOut = code1 ? code1 : code2;
-        let lat, lon;
-        if (codeOut & 1) { // above
-          lat = bounds.latMax;
-          lon = lon1 + (lon2 - lon1) * (bounds.latMax - lat1) / (lat2 - lat1);
-        } else if (codeOut & 2) { // below
-          lat = bounds.latMin;
-          lon = lon1 + (lon2 - lon1) * (bounds.latMin - lat1) / (lat2 - lat1);
-        } else if (codeOut & 4) { // left
-          lon = bounds.lonMin;
-          lat = lat1 + (lat2 - lat1) * (bounds.lonMin - lon1) / (lon2 - lon1);
-        } else if (codeOut & 8) { // right
-          lon = bounds.lonMax;
-          lat = lat1 + (lat2 - lat1) * (bounds.lonMax - lon1) / (lon2 - lon1);
-        }
-        if (codeOut === code1) {
-          lat1 = lat; lon1 = lon; code1 = getClipCode(lat1, lon1, bounds);
-        } else {
-          lat2 = lat; lon2 = lon; code2 = getClipCode(lat2, lon2, bounds);
-        }
-      }
-    }
-  }
-
-  // Helper: Haversine distance in NM
-  function haversineNM(lat1, lon1, lat2, lon2) {
-    const toRad = x => x * Math.PI / 180;
-    const R = 3440.065; // nautical miles
-    const dLat = toRad(lat2-lat1);
-    const dLon = toRad(lon2-lon1);
-    const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  }
-
-  function drawRoute(parsed,opts){
-  let mapAreaInput = document.getElementById('pro-map-area');
-  let mapAreaName = mapAreaInput ? mapAreaInput.value.trim() : 'Continental US';
-  console.log('[PRO][route] MAP_AREAS keys:', Object.keys(MAP_AREAS));
-  console.log('[PRO][route] drawRoute: using pro-map-area value:', mapAreaName);
-  if (!MAP_AREAS[mapAreaName]) {
-    console.warn('[PRO][route] Map area name not found in MAP_AREAS:', mapAreaName, 'Using CONUS bounds.');
-  } else {
-    console.log('[PRO][route] Using map area:', mapAreaName);
-  }
-  const bounds = MAP_AREAS[mapAreaName] || MAP_AREAS['Continental US'];
-  // Log map name and boundaries before clipping
-  console.log(`[PRO][route] drawRoute: mapAreaName="${mapAreaName}", bounds= latMax=${bounds.latMax}, latMin=${bounds.latMin}, lonMin=${bounds.lonMin}, lonMax=${bounds.lonMax}`);
-    // Clip each segment to bounds
-    const clippedLatLngs = [];
-    for (let i = 0; i < parsed.latlngs.length - 1; i++) {
-      const seg = clipSegment(parsed.latlngs[i], parsed.latlngs[i+1], bounds);
-      if (seg) {
-        if (clippedLatLngs.length === 0 ||
-            clippedLatLngs[clippedLatLngs.length-1][0] !== seg[0][0] ||
-            clippedLatLngs[clippedLatLngs.length-1][1] !== seg[0][1]) {
-          clippedLatLngs.push(seg[0]);
-        }
-        clippedLatLngs.push(seg[1]);
-      }
-    }
-
-    // Calculate hour marks for triangles
-    const airspeed = parseFloat(document.getElementById('pro-airspeed')?.value) || 310;
-    const hourDist = airspeed; // nautical miles in one hour
-    // Compute cumulative distances along the route
-    let cumDist = 0, last = clippedLatLngs[0], marks = [], nextMark = hourDist;
-    for (let i = 1; i < clippedLatLngs.length; i++) {
-      const curr = clippedLatLngs[i];
-      const segDist = haversineNM(last[0], last[1], curr[0], curr[1]);
-      while (cumDist + segDist >= nextMark) {
-        const frac = (nextMark - cumDist) / segDist;
-        const lat = last[0] + frac * (curr[0] - last[0]);
-        const lon = last[1] + frac * (curr[1] - last[1]);
-        marks.push([lat, lon]);
-        nextMark += hourDist;
-      }
-      cumDist += segDist;
-      last = curr;
-    }
-    // Only draw triangles if at least one hour mark exists
-    const detail={
-      latlngs:clippedLatLngs,
-      color:(opts&&opts.color)||'#ff0000',
-      width:(opts&&opts.width)||3,
-      bounds: bounds,
-      triangles: marks
-    };
-    window.dispatchEvent(new CustomEvent('PRO_DRAW_ROUTE',{detail}));
-  }
-  function clear(){ window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE')); }
-
-  box.querySelector('#pro-clear').onclick=()=>{
-    clear();
-    const logEl = box.querySelector('#pro-log');
-    if (logEl) logEl.textContent = '';
-  };
-  box.querySelector('#pro-draw').onclick=async()=>{
-    try{
-      setStatus('Parsing route…');
-      const routeStr=box.querySelector('#pro-route').value;
-      const color=box.querySelector('#pro-color').value||'#ff0000';
-      const width=parseInt(box.querySelector('#pro-width').value||'3',10);
-      // Log the value of pro-map-area at draw time
-      const mapAreaInput = document.getElementById('pro-map-area');
-      let mapAreaValue = '';
-      if (mapAreaInput) {
-        mapAreaValue = mapAreaInput.value;
-        console.log('[PRO][content] pro-map-area value at draw:', mapAreaValue);
-      }
-      const parsed=await parseRoute(routeStr);
-      if(parsed.error){
-        // Always log error regardless of debug checkbox
-        const logEl=box.querySelector('#pro-log');
-        logEl.textContent += `Error: Could not resolve route element "${parsed.error}"\n`;
-        logEl.scrollTop = logEl.scrollHeight;
-        return;
-      }
-      const names=parsed.waypoints.map(w=>w.id).join(' → ');
-      setStatus('Resolved: '+names);
-  drawRoute(parsed,{color,width,mapAreaValue});
-      setStatus('Sent draw ('+parsed.latlngs.length+' pts)');
-      setStatus('Route drawn.');
-      console.log('[PRO][content] calling saveLastRoute after draw');
-      try{ const _route=(document.getElementById('pro-route')||{}).value||''; const _color=(document.getElementById('pro-color')||{}).value||'#ff0000'; const _width=parseInt((document.getElementById('pro-width')||{}).value||'3',10); window.__PRO_LAST_ROUTE = {route: routeStr, color: color||'#ff0000', width: width||3, t: Date.now()};
-    saveLastRoute(_route,_color,_width); console.log('[PRO][content] saveLastRoute OK (post-draw)'); }catch(e){ console.warn('[PRO][content] saveLastRoute failed', e); }
-    }catch(e){ setStatus('Error: '+(e.message||e)); }
-  };
-
-  // Listen for injected ACKs and persist on success (belt & suspenders)
-  window.addEventListener('message', async (ev)=>{
-    try{
-      const d = ev && ev.data;
-      if(!d || d.type!=='PRO_DRAW_ACK') return;
-      console.log('[PRO][content] ACK (message)', d);
-      if(d.ok){
-        const pRoute = (document.getElementById('pro-route')||{}).value||'';
-        const pColor = (document.getElementById('pro-color')||{}).value||'#ff0000';
-        const pWidth = parseInt((document.getElementById('pro-width')||{}).value||'3',10);
-        try{ const _route=(document.getElementById('pro-route')||{}).value||''; const _color=(document.getElementById('pro-color')||{}).value||'#ff0000'; const _width=parseInt((document.getElementById('pro-width')||{}).value||'3',10); window.__PRO_LAST_ROUTE = {route: routeStr, color: color||'#ff0000', width: width||3, t: Date.now()};
-    saveLastRoute(_route,_color,_width); console.log('[PRO][content] saveLastRoute OK (ACK)'); }catch(e){ console.warn('[PRO][content] save (ACK) err', e); }
-      }
-    }catch(e){ /* noop */ }
-  }, false);
-})();
 // Auto-restore listener to avoid timeouts
-try{
-  window.addEventListener('PRO_INJECTED_READY', async ()=>{
-    try{
-      const last = await loadLastRoute();
-      if (last && last.route) {
-        // Ensure sidebar input is set to detected map area before drawing
-        const mapAreaInput = document.getElementById('pro-map-area');
-        const detectedArea = detectMapArea();
-        if (mapAreaInput && mapAreaInput.value !== detectedArea) {
-          mapAreaInput.value = detectedArea;
-          mapAreaInput.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-        // Set route/color/width inputs to restored values
-        const routeInput = document.getElementById('pro-route');
-        const colorInput = document.getElementById('pro-color');
-        const widthInput = document.getElementById('pro-width');
-        if (routeInput) routeInput.value = last.route || '';
-        if (colorInput) colorInput.value = last.color || '#ff0000';
-        if (widthInput) widthInput.value = String(last.width || 3);
-        // Now draw the route
-        drawRouteFromString(last.route, last.color, last.width, 'restore');
-        // Persist the restored route so it is not lost on next reload
-        if (typeof saveLastRoute === 'function') {
-          saveLastRoute(last.route, last.color, last.width);
-        }
-        // Immediately trigger a redraw to ensure observers use the correct route
-        if (typeof redrawIfBothReady === 'function') {
-          setTimeout(() => { redrawIfBothReady(); }, 0);
-        }
+window.addEventListener('PRO_INJECTED_READY', async ()=>{
+  try{
+    const last = await loadLastRoute();
+    if (last && last.route) {
+      // Ensure sidebar input is set to detected map area before drawing
+      const mapAreaInput = document.getElementById('pro-map-area');
+      const detectedArea = detectMapArea();
+      if (mapAreaInput && mapAreaInput.value !== detectedArea) {
+        mapAreaInput.value = detectedArea;
+        mapAreaInput.dispatchEvent(new Event('input', { bubbles: true }));
       }
-    }catch(e){ console.warn('[PRO][content] restore-on-ready failed', e); }
-  });
-}catch(_){}
+      // Set route/color/width inputs to restored values
+      const routeInput = document.getElementById('pro-route');
+      const colorInput = document.getElementById('pro-color');
+      const widthInput = document.getElementById('pro-width');
+      if (routeInput) routeInput.value = last.route || '';
+      if (colorInput) colorInput.value = last.color || '#ff0000';
+      if (widthInput) widthInput.value = String(last.width || 3);
+      // Now draw the route
+      window.drawRouteFromString(last.route, last.color, last.width, 'restore');
+      // Persist the restored route so it is not lost on next reload
+      if (typeof saveLastRoute === 'function') {
+        saveLastRoute(last.route, last.color, last.width);
+      }
+      // Immediately trigger a redraw to ensure observers use the correct route
+      if (typeof redrawIfBothReady === 'function') {
+        setTimeout(() => { redrawIfBothReady(); }, 0);
+      }
+    }
+  }catch(e){ console.warn('[PRO][content] restore-on-ready failed', e); }
+});
+})();
+// Close the async IIFE
+
+

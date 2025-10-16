@@ -100,6 +100,12 @@
     cv.style.display='none'; // Start hidden
     document.body.appendChild(cv);
     state.overlay=cv; state.ctx=cv.getContext('2d');
+    console.log(
+    document.getElementById('pro_route_canvas'),
+      window.document === document,
+      window === window.top
+    );
+
     return cv;
   }
   function redraw(){
@@ -160,13 +166,44 @@
   state.last={latlngs:detail.latlngs, color:detail.color, width:detail.width, bounds: detail.bounds, triangles: detail.triangles};
     redraw();
   }
-  window.addEventListener('PRO_DRAW_ROUTE', ev=>{ try{ handleDraw(ev.detail||{});}catch(e){console.warn(e);} });
+  window.addEventListener('PRO_DRAW_ROUTE', ev=>{
+    try {
+      handleDraw(ev.detail||{});
+      // Persist last route to sessionStorage
+      if (ev.detail && ev.detail.route) {
+        try {
+          sessionStorage.setItem('PRO_LAST_ROUTE_FALLBACK', JSON.stringify({
+            route: ev.detail.route,
+            color: ev.detail.color,
+            width: ev.detail.width,
+            t: Date.now()
+          }));
+        } catch(_){/* ignore */}
+      }
+    } catch(e){console.warn(e);}
+  });
   window.addEventListener('PRO_CLEAR_ROUTE', ()=>{
-    state.last=null;
-    if(state.overlay){
-      state.ctx.clearRect(0,0,state.overlay.width,state.overlay.height);
-      state.overlay.style.display='none'; // Hide canvas immediately
+    console.log('[PRO][inj] PRO_CLEAR_ROUTE event received: clearing overlay');
+    console.log(  
+      document.getElementById('pro_route_canvas'),
+      window.document === document,
+      window === window.top
+    );
+    let overlay = document.getElementById('pro_route_canvas');
+    if (overlay) {
+      state.overlay = overlay;
+      state.ctx = overlay.getContext('2d');
+      // Always clear and hide, even if context is missing
+      if (state.ctx) {
+        state.ctx.clearRect(0, 0, overlay.width, overlay.height);
+      }
+      overlay.width = overlay.width; // Always reset canvas as fallback
+      overlay.style.display = 'none'; // Always hide canvas
+      console.log('[PRO][inj] Overlay canvas forcibly cleared and hidden');
+    } else {
+      console.log('[PRO][inj] No overlay canvas found to clear');
     }
+    // Do not clear sessionStorage so route can be restored after reload
   });
   window.addEventListener('scroll', ()=>redraw(), {passive:true});
   window.addEventListener('resize', ()=>redraw());
@@ -176,4 +213,14 @@
 try {
   window.__PRO_OVERLAY_READY = true;
   window.dispatchEvent(new CustomEvent('PRO_INJECTED_READY'));
+  // Restore last route from sessionStorage if present
+  const lastRouteRaw = sessionStorage.getItem('PRO_LAST_ROUTE_FALLBACK');
+  if (lastRouteRaw && typeof window.drawRouteFromString === 'function') {
+    try {
+      const lastRoute = JSON.parse(lastRouteRaw);
+      if (lastRoute && lastRoute.route) {
+        window.drawRouteFromString(lastRoute.route, lastRoute.color, lastRoute.width, 'restore');
+      }
+    } catch(_){/* ignore */}
+  }
 } catch(_) {}

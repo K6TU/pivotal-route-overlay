@@ -97,8 +97,27 @@ function interp(A, B, n) {
 }
 
 function drawRoute(parsed, opts) {
+  console.debug('[drawRoute] called with:', { parsed, opts });
+  if (!parsed) {
+    console.warn('[drawRoute] No parsed route provided:', parsed);
+    return;
+  }
+  if (!window.MAP_AREAS) {
+    console.warn('[drawRoute] window.MAP_AREAS is not defined!');
+  }
+  // Log route properties if available
+  if (parsed && typeof parsed === 'object') {
+    console.debug('[drawRoute] parsed keys:', Object.keys(parsed));
+    if (parsed.latlngs) {
+      console.debug('[drawRoute] parsed.latlngs length:', parsed.latlngs.length);
+    }
+  }
+  if (opts) {
+    console.debug('[drawRoute] opts:', opts);
+  }
   let mapAreaInput = document.getElementById('pro-map-area');
   let mapAreaName = mapAreaInput ? mapAreaInput.value.trim() : 'Continental US';
+  console.debug('[drawRoute] Using region:', mapAreaName);
   const bounds = window.MAP_AREAS[mapAreaName] || window.MAP_AREAS['Continental US'];
   const clippedLatLngs = [];
   for (let i = 0; i < parsed.latlngs.length - 1; i++) {
@@ -135,6 +154,7 @@ function drawRoute(parsed, opts) {
     bounds: bounds,
     triangles: marks
   };
+  console.debug('[drawRoute] Dispatching PRO_DRAW_ROUTE event with detail:', detail);
   window.dispatchEvent(new CustomEvent('PRO_DRAW_ROUTE', { detail }));
 }
 
@@ -144,11 +164,13 @@ window.drawRoute = drawRoute;
 
 
 function drawRouteFromString(routeStr, color, width, mode) {
+  console.debug('[drawRouteFromString] called with:', { routeStr, color, width, mode });
   // mode can be 'restore' or undefined
   if (!routeStr || !routeStr.trim()) return;
   // Use the global getIndexes if available, else fallback
   const getIndexes = window.getIndexes || (async () => ({ airports: {}, navaids: {}, fixes: {} }));
   window.parseRoute(routeStr, getIndexes).then(parsed => {
+    console.debug('[drawRouteFromString] parseRoute result:', parsed);
     if (parsed && !parsed.error) {
       window.drawRoute(parsed, { color, width });
       if (mode === 'restore') {

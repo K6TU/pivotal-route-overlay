@@ -35,6 +35,7 @@ function observeSubregionBtn(btn, redrawIfBothReady, hideAndClear) {
   if (!btn) return;
   // Disconnect any previous observer on this button
   if (btn._proObserver && typeof btn._proObserver.disconnect === 'function') {
+    console.log('[PRO][observers.js] Observer disconnected:', btn);
     btn._proObserver.disconnect();
   }
   let lastLabel = btn.getAttribute('aria-label');
@@ -66,7 +67,13 @@ function observeSubregionBtn(btn, redrawIfBothReady, hideAndClear) {
       waitForMapAndSubregion(window.detectMapArea ? window.detectMapArea() : undefined, redrawIfBothReady);
     }
   });
-  buttonObserver.observe(btn, { attributes: true, attributeFilter: ['aria-label'] });
+  buttonObserver.observe(btn, {
+    attributes: true,
+    attributeFilter: ['aria-label'],
+    childList: true,
+    subtree: true,
+    characterData: true
+  });
   btn._proObserver = buttonObserver;
   console.log('[PRO][observers.js] Observer attached to button:', btn, 'Initial aria-label:', btn.getAttribute('aria-label'));
 
