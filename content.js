@@ -74,7 +74,7 @@ function redrawIfBothReady() {
     window.__PRO_LAST_DRAWN_MAPAREA = currentMapArea;
     window.__PRO_LAST_DRAWN_ROUTE = '';
     setTimeout(() => {
-      window.parseRoute(route, getIndexes).then(parsed => {
+  window.parseRoute(route, window.getIndexes).then(parsed => {
         if (!parsed.error) {
           console.log('[PRO][redrawIfBothReady] Drawing route for new region (delayed):', parsed, { color, width, mapArea: currentMapArea });
           window.drawRoute(parsed, { color, width });
@@ -95,7 +95,7 @@ function redrawIfBothReady() {
     }, 50); // 50ms delay to allow DOM/map area update
     return;
   }
-  window.parseRoute(route, getIndexes).then(parsed => {
+  window.parseRoute(route, window.getIndexes).then(parsed => {
     if (!parsed.error) {
       console.log('[PRO][redrawIfBothReady] Drawing route:', parsed, { color, width, mapArea: currentMapArea });
   window.postMessage({ PRO_OVERLAY_CMD: 'DRAW', detail: Object.assign({}, parsed, { color, width }) }, '*');
@@ -121,6 +121,8 @@ function hideAndClear() {
 function attachObservers() {
   const img = window.getBetaMapImage();
   window.observeImage(img, redrawIfBothReady, hideAndClear);
+  window.observeReactContainer();
+
   // Robust polling for subregion button
   let lastBtn = null;
   setInterval(() => {
@@ -150,7 +152,7 @@ function attachObservers() {
   }, 500);
   // Attach observer to parent of subregion button
   // const zoomDiv = lastBtn ? lastBtn.closest('div[class$="_modelZoom"]') : document.querySelector('div[class$="_modelZoom"]');
-  const zoomDiv = lastBtn.closest('div[class$="_toolbarSectionInner"]');
+  const zoomDiv = lastBtn ? lastBtn.closest('div[class$="_toolbarSectionInner"]') : null;
   console.log(zoomDiv);
   if (zoomDiv) {
     if (window.zoomParentObserver) window.zoomParentObserver.disconnect();
@@ -546,7 +548,7 @@ if (clearBtn) {
       // Use latest mapAreaValue for redraw
       const mapAreaInput = document.getElementById('pro-map-area');
       let mapAreaValue = mapAreaInput ? mapAreaInput.value : '';
-      const parsed = await window.parseRoute(cached.route);
+  const parsed = await window.parseRoute(cached.route, window.getIndexes);
       if (!parsed.error) {
   window.drawRoute(parsed, { color: cached.color||'#ff0000', width: cached.width||3, mapAreaValue });
       }

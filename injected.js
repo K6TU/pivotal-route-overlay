@@ -45,9 +45,9 @@
     for (const div of mapContainers) {
       const imgEl = div.querySelector('img[src*="pivotalweather.com/maps/models/"]');
       if (imgEl) {
-        imgEl.addEventListener('load', () => { setTimeout(redrawFn, 10); }, { once: true });
+        imgEl.addEventListener('load', () => { console.log("LOADED!!!"); setTimeout(redrawFn, 10); }, { once: true });
         // Also observe src changes
-        const mo = new MutationObserver(() => { setTimeout(redrawFn, 10); });
+        const mo = new MutationObserver(() => { console.log("!!MUTATED!!!"); setTimeout(redrawFn, 10); });
         mo.observe(imgEl, { attributes: true, attributeFilter: ['src'] });
         break;
       }
@@ -100,11 +100,6 @@
     cv.style.display='none'; // Start hidden
     document.body.appendChild(cv);
     state.overlay=cv; state.ctx=cv.getContext('2d');
-    console.log(
-    document.getElementById('pro_route_canvas'),
-      window.document === document,
-      window === window.top
-    );
 
     return cv;
   }
