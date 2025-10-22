@@ -55,7 +55,7 @@
   }
 
   observeBetaMapImage(() => { if (typeof redraw === 'function') redraw(); });
-
+  
   function getRect(){
     // Classic UI
     const area=document.getElementById('click_map_area');
@@ -65,12 +65,22 @@
       if(parts.length===4){
         const [x1,y1,x2,y2]=parts; // coords are relative to the image
         const r=img.getBoundingClientRect();
+        console.log('classic: ', r);
         const baseX=Math.round(window.scrollX+r.left);
         const baseY=Math.round(window.scrollY+r.top);
+        console.log('classic base: ', baseX, baseY);
         return {x:baseX+x1,y:baseY+y1,w:(x2-x1),h:(y2-y1)};
       }
     }
-    // Beta UI: look for img inside a div with class ending _mapContainer
+
+    // Beta UI: scale pixelBounds to displayed image size, or fallback to image size
+    // NB: In the new UI, pixelBounds is defined in a script but isn't accessible
+    // to the injected code.  It has the same values provided by the click_map_area
+    // in the classic UI.  That is tied to the map generation used by Pivotal Weather.
+    // It's possible this changes at some point but it affects all image generation.
+    // Likely a small risk...
+    
+    const pixelBounds = [[1,47],[1099,817]];
     let betaImg = null;
     const mapContainers = Array.from(document.querySelectorAll('div[class$="_mapContainer"]'));
     for (const div of mapContainers) {
@@ -79,15 +89,28 @@
     }
     if (betaImg) {
       const r = betaImg.getBoundingClientRect();
-      const x = Math.round(window.scrollX + r.left), y = Math.round(window.scrollY + r.top);
-      return {x, y, w: Math.round(r.width), h: Math.round(r.height)};
+      const baseX = Math.round(window.scrollX + r.left);
+      const baseY = Math.round(window.scrollY + r.top);
+      if (betaImg.naturalWidth && betaImg.naturalHeight) {
+        // Scale pixelBounds to displayed size
+        const [[x1, y1], [x2, y2]] = pixelBounds;
+        const naturalW = betaImg.naturalWidth;
+        const naturalH = betaImg.naturalHeight;
+        const scaleX = r.width / naturalW;
+        const scaleY = r.height / naturalH;
+        const drawX1 = baseX + x1 * scaleX;
+        const drawY1 = baseY + y1 * scaleY;
+        const drawX2 = baseX + x2 * scaleX;
+        const drawY2 = baseY + y2 * scaleY;
+        return { x: Math.round(drawX1), y: Math.round(drawY1), w: Math.round(drawX2 - drawX1), h: Math.round(drawY2 - drawY1) };
+      } else {
+        // Fallback: use displayed image size
+        const x = Math.round(window.scrollX + r.left), y = Math.round(window.scrollY + r.top);
+        return {x, y, w: Math.round(r.width), h: Math.round(r.height)};
+      }
     }
-    // Fallback: classic image
-    if(img){
-      const r=img.getBoundingClientRect();
-      const x=Math.round(window.scrollX+r.left), y=Math.round(window.scrollY+r.top);
-      return {x,y,w:Math.round(r.width),h:Math.round(r.height)};
-    }
+
+    // (No longer needed: fallback to classic image only, since click_map_area and display_image are always both present in classic UI)
     return null;
   }
   function ensureOverlay(){

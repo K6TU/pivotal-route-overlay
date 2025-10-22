@@ -20,7 +20,7 @@ function detectMapArea() {
 }
 
 const MAP_AREAS = {
-  'Continental US': { latMax: 59, latMin: 21, lonMin: -129, lonMax: -64.1 },
+  'Continental US': { latMax: 59, latMin: 21, lonMin: -129, lonMax: -64 },
   'Northwest US': { latMax: 53, latMin: 40, lonMin: -133.11, lonMax: -110.9 },
   'Southwest US': { latMax: 43.25, latMin: 30.38, lonMin: -132.01, lonMax: -110 },
   'Northern Rockies': { latMax: 50, latMin: 39, lonMin: -119.8, lonMax: -110 },

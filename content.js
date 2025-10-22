@@ -27,87 +27,109 @@ document.addEventListener('DOMContentLoaded', function() {
 // Main orchestration logic
 
 function redrawIfBothReady() {
+  // Fastest skip: check image and map area first
   const img = window.getBetaMapImage();
   const mapArea = window.detectMapArea();
-  if (!img || !img.complete || !mapArea) {
-    console.log('[PRO][redrawIfBothReady] Skipping: img or mapArea not ready', {img, mapArea});
+  const title = document.title;
+  if (!img || !mapArea) {
+    if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][redrawIfBothReady] Skipping: img or mapArea not ready', { img, mapArea });
     return;
   }
-  window.updateSidebarInput(mapArea);
+  if (!img.complete) {
+    // Wait for image to load, then retry
+    if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][redrawIfBothReady] Map image not complete, waiting for load event.');
+    img.addEventListener('load', () => {
+      setTimeout(() => redrawIfBothReady(), 0);
+    }, { once: true });
+    return;
+  }
+
   // Use last restored/drawn route if available
   const lastRouteObj = window.__PRO_LAST_ROUTE || {};
   const routeInputVal = (document.getElementById('pro-route') || {}).value || '';
-  const colorInputVal = (document.getElementById('pro-color') || {}).value || '#ff0000';
-  const widthInputVal = parseInt((document.getElementById('pro-width') || {}).value || '3', 10);
-  // Only use route if either global or input is non-empty
   let route = '';
   if (lastRouteObj.route && lastRouteObj.route.trim()) {
     route = lastRouteObj.route;
   } else if (routeInputVal && routeInputVal.trim()) {
     route = routeInputVal;
   }
-  const color = lastRouteObj.color || colorInputVal;
-  const width = lastRouteObj.width || widthInputVal;
-  window.__PRO_LAST_DRAWN_ROUTE = window.__PRO_LAST_DRAWN_ROUTE || '';
-  window.__PRO_LAST_DRAWN_MAPAREA = window.__PRO_LAST_DRAWN_MAPAREA || '';
+
+  // Fastest skip: check for empty route
+  if (!route || !route.trim()) {
+    if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][redrawIfBothReady] No route to draw, skipping redraw and clearing overlay.');
+    window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+    return;
+  }
+
   // Get current map area only once
   let currentMapArea = 'Continental US';
   const mapAreaInput = document.getElementById('pro-map-area');
   if (mapAreaInput && mapAreaInput.value) {
     currentMapArea = mapAreaInput.value.trim();
   }
-  // Only redraw if route is non-empty and either route or map area changed
-  if (!route || !route.trim()) {
-    // Prevent redraw if both global and input route are empty
-    console.log('[PRO][redrawIfBothReady] No route to draw, skipping redraw and clearing overlay.');
-  window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+
+  // Fastest skip: check for unchanged title, route and map area
+  window.__PRO_LAST_TITLE = window.__PRO_LAST_TITLE || '';
+  window.__PRO_LAST_DRAWN_ROUTE = window.__PRO_LAST_DRAWN_ROUTE || '';
+  window.__PRO_LAST_DRAWN_MAPAREA = window.__PRO_LAST_DRAWN_MAPAREA || '';
+  if (route === window.__PRO_LAST_DRAWN_ROUTE && currentMapArea === window.__PRO_LAST_DRAWN_MAPAREA && title === window.__PRO_LAST_TITLE)  {
+    if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][redrawIfBothReady] Title, Route and map area unchanged, skipping redraw:', route, currentMapArea);
     return;
   }
-  if (route === window.__PRO_LAST_DRAWN_ROUTE && currentMapArea === window.__PRO_LAST_DRAWN_MAPAREA) {
-    console.log('[PRO][redrawIfBothReady] Route and map area unchanged, skipping redraw:', route, currentMapArea);
-    return;
-  }
+
+  // Always update sidebar input after skip checks
+  window.updateSidebarInput(mapArea);
+
   // If the map area changed, clear the previous route line immediately
+  const colorInputVal = (document.getElementById('pro-color') || {}).value || '#ff0000';
+  const widthInputVal = parseInt((document.getElementById('pro-width') || {}).value || '3', 10);
+  const color = lastRouteObj.color || colorInputVal;
+  const width = lastRouteObj.width || widthInputVal;
+
   if (currentMapArea !== window.__PRO_LAST_DRAWN_MAPAREA) {
-    console.log('[PRO][redrawIfBothReady] Map area changed, clearing previous route line and scheduling redraw.');
-  window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+    if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][redrawIfBothReady] Map area changed, clearing previous route line and scheduling redraw.');
+    window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
     window.__PRO_LAST_DRAWN_MAPAREA = currentMapArea;
     window.__PRO_LAST_DRAWN_ROUTE = '';
     setTimeout(() => {
-  window.parseRoute(route, window.getIndexes).then(parsed => {
+      window.parseRoute(route, window.getIndexes).then(parsed => {
         if (!parsed.error) {
-          console.log('[PRO][redrawIfBothReady] Drawing route for new region (delayed):', parsed, { color, width, mapArea: currentMapArea });
+          if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][redrawIfBothReady] Drawing route for new region (delayed):', parsed, { color, width, mapArea: currentMapArea });
           window.drawRoute(parsed, { color, width });
           window.__PRO_LAST_DRAWN_ROUTE = route;
           window.__PRO_LAST_DRAWN_MAPAREA = currentMapArea;
         } else {
-          console.log('[PRO][redrawIfBothReady] Route invalid for new region, still clearing. Parse error:', parsed.error);
+          if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][redrawIfBothReady] Route invalid for new region, still clearing. Parse error:', parsed.error);
+          if (typeof setStatus === 'function') setStatus('Route error: ' + (parsed.error || 'Invalid route element'));
           window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
           window.__PRO_LAST_DRAWN_MAPAREA = currentMapArea;
           window.__PRO_LAST_DRAWN_ROUTE = '';
         }
       }).catch((err) => {
-        console.log('[PRO][redrawIfBothReady] Exception during parseRoute:', err);
-  window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+        if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][redrawIfBothReady] Exception during parseRoute:', err);
+        window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
         window.__PRO_LAST_DRAWN_MAPAREA = currentMapArea;
         window.__PRO_LAST_DRAWN_ROUTE = '';
       });
     }, 50); // 50ms delay to allow DOM/map area update
     return;
   }
+
   window.parseRoute(route, window.getIndexes).then(parsed => {
     if (!parsed.error) {
-      console.log('[PRO][redrawIfBothReady] Drawing route:', parsed, { color, width, mapArea: currentMapArea });
-  window.postMessage({ PRO_OVERLAY_CMD: 'DRAW', detail: Object.assign({}, parsed, { color, width }) }, '*');
+      if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][redrawIfBothReady] Drawing route:', parsed, { color, width, mapArea: currentMapArea });
+      window.postMessage({ PRO_OVERLAY_CMD: 'DRAW', detail: Object.assign({}, parsed, { color, width }) }, '*');
       window.__PRO_LAST_DRAWN_ROUTE = route;
       window.__PRO_LAST_DRAWN_MAPAREA = currentMapArea;
+      window.__PRO_LAST_TITLE = document.title;
     } else {
-      console.log('[PRO][redrawIfBothReady] Parse error:', parsed.error);
-  window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+      if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][redrawIfBothReady] Parse error:', parsed.error);
+      if (typeof setStatus === 'function') setStatus('Route error: ' + (parsed.error || 'Invalid route element'));
+      window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
     }
   }).catch((err) => {
-    console.log('[PRO][redrawIfBothReady] Exception during parseRoute:', err);
-  window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+    if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][redrawIfBothReady] Exception during parseRoute:', err);
+    window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
   });
 }
 
@@ -125,35 +147,36 @@ function attachObservers() {
 
   // Robust polling for subregion button
   let lastBtn = null;
-  setInterval(() => {
-    const btn = Array.from(document.querySelectorAll('div[class$="_modelZoom"] button[aria-label^="Zoom: "]'))[0];
-    if (btn !== lastBtn) {
-      lastBtn = btn;
-      if (btn) {
-        window.proDebugLog('[PRO][content] Attaching subregion observer to button with aria-label:', btn.getAttribute('aria-label'));
-        // Wait for window.observeSubregionBtn to be defined
-        const tryAttach = (tries = 0) => {
-          if (typeof window.observeSubregionBtn === 'function') {
-            console.log('[PRO][content.js] Calling observeSubregionBtn with:', btn, 'aria-label:', btn.getAttribute('aria-label'));
-            window.observeSubregionBtn(btn, redrawIfBothReady, hideAndClear);
-            // Immediately trigger redraw since the region may have changed
-            if (typeof redrawIfBothReady === 'function') {
-              setTimeout(() => { redrawIfBothReady(); }, 0);
+    setInterval(() => {
+        const btn = Array.from(document.querySelectorAll('div[class$="_modelZoom"] button[aria-label^="Zoom: "]'))[0];
+        if (btn !== lastBtn) {
+            lastBtn = btn;
+            if (btn) {
+                window.proDebugLog('[PRO][content] Attaching subregion observer to button with aria-label:', btn.getAttribute('aria-label'));
+                // Wait for window.observeSubregionBtn to be defined
+                const tryAttach = (tries = 0) => {
+                    if (typeof window.observeSubregionBtn === 'function') {
+                        if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][content.js] Calling observeSubregionBtn with:', btn, 'aria-label:', btn.getAttribute('aria-label'));
+                        window.observeSubregionBtn(btn, redrawIfBothReady, hideAndClear);
+                        // Immediately trigger redraw since the region may have changed
+                        if (typeof redrawIfBothReady === 'function') {
+                            setTimeout(() => { redrawIfBothReady(); }, 0);
+                        }
+                    } else if (tries < 20) {
+                        setTimeout(() => tryAttach(tries + 1), 100);
+                    } else {
+                        if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][content] ERROR: observeSubregionBtn not available after waiting. Global keys:', Object.keys(window));
+                    }
+                };
+                tryAttach();
             }
-          } else if (tries < 20) {
-            setTimeout(() => tryAttach(tries + 1), 100);
-          } else {
-            window.proDebugLog('[PRO][content] ERROR: observeSubregionBtn not available after waiting. Global keys:', Object.keys(window));
-          }
-        };
-        tryAttach();
-      }
-    }
-  }, 500);
+        }
+    }, 500);
   // Attach observer to parent of subregion button
   // const zoomDiv = lastBtn ? lastBtn.closest('div[class$="_modelZoom"]') : document.querySelector('div[class$="_modelZoom"]');
   const zoomDiv = lastBtn ? lastBtn.closest('div[class$="_toolbarSectionInner"]') : null;
-  console.log(zoomDiv);
+  if (typeof window.proDebugLog === 'function') window.proDebugLog(zoomDiv);
+
   if (zoomDiv) {
     if (window.zoomParentObserver) window.zoomParentObserver.disconnect();
     window.zoomParentObserver = new MutationObserver(() => {
@@ -187,36 +210,78 @@ window.addEventListener('PRO_INJECTED_READY', () => {
     if (mapAreaInput) mapAreaInput.value = mapArea;
   }
 
-(async ()=>{
+
+(async () => {
   // define once
-  if(!window.PRO_saveLastRoute){
-    window.PRO_saveLastRoute = async function(route, color, width){ try{ sessionStorage.setItem('PRO_LAST_ROUTE_FALLBACK', JSON.stringify({route,color,width,t:Date.now()})); }catch(_){}
-      try{ await chrome.runtime.sendMessage({cmd:'PRO_SAVE_LAST_ROUTE', data:{route, color, width, t: Date.now()}}); }catch(_){}
+  if (!window.PRO_saveLastRoute) {
+    window.PRO_saveLastRoute = async function (route, color, width) {
+      try {
+        sessionStorage.setItem('PRO_LAST_ROUTE_FALLBACK', JSON.stringify({ route, color, width, t: Date.now() }));
+      } catch (_) {}
+      try {
+        await chrome.runtime.sendMessage({ cmd: 'PRO_SAVE_LAST_ROUTE', data: { route, color, width, t: Date.now() } });
+      } catch (_) {}
     };
-    window.PRO_loadLastRoute = async function(){ let fb=null; try{ const r=sessionStorage.getItem('PRO_LAST_ROUTE_FALLBACK'); if(r) fb=JSON.parse(r);}catch(_){}
-      try{ const r = await chrome.runtime.sendMessage({cmd:'PRO_LOAD_LAST_ROUTE'}); const data=(r&&r.data)||fb||null; console.log('[PRO][content] loadLastRoute ->', data); return data; }catch(e){ console.warn('[PRO][content] loadLastRoute err', e); return fb; }
+    window.PRO_loadLastRoute = async function () {
+      let fb = null;
+      try {
+        const r = sessionStorage.getItem('PRO_LAST_ROUTE_FALLBACK');
+        if (r) fb = JSON.parse(r);
+      } catch (_) {}
+      try {
+        const r = await chrome.runtime.sendMessage({ cmd: 'PRO_LOAD_LAST_ROUTE' });
+        const data = (r && r.data) || fb || null;
+        if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][content] loadLastRoute ->', data);
+        return data;
+      } catch (e) {
+        if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][content] loadLastRoute err', e);
+        return fb;
+      }
     };
-    window.PRO_clearLastRoute = async function(){ try{ await chrome.runtime.sendMessage({cmd:'PRO_CLEAR_LAST_ROUTE'}); }catch(e){ console.warn('[PRO][content] clearLastRoute err', e);} try{ sessionStorage.removeItem('PRO_LAST_ROUTE_FALLBACK'); }catch(_){}};
+    window.PRO_clearLastRoute = async function () {
+      try {
+        await chrome.runtime.sendMessage({ cmd: 'PRO_CLEAR_LAST_ROUTE' });
+      } catch (e) {
+        if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][content] clearLastRoute err', e);
+      }
+      try {
+        sessionStorage.removeItem('PRO_LAST_ROUTE_FALLBACK');
+      } catch (_) {}
+    };
   }
   // back-compat shims for older call sites
-  if(typeof window.loadLastRoute!=='function'){ window.loadLastRoute = window.PRO_loadLastRoute; }
-  if(typeof window.saveLastRoute!=='function'){ window.saveLastRoute = window.PRO_saveLastRoute; }
-  if(typeof window.clearLastRoute!=='function'){ window.clearLastRoute = window.PRO_clearLastRoute; }
+  if (typeof window.loadLastRoute !== 'function') {
+    window.loadLastRoute = window.PRO_loadLastRoute;
+  }
+  if (typeof window.saveLastRoute !== 'function') {
+    window.saveLastRoute = window.PRO_saveLastRoute;
+  }
+  if (typeof window.clearLastRoute !== 'function') {
+    window.clearLastRoute = window.PRO_clearLastRoute;
+  }
 
   // Listen for injected ACKs and persist on success (belt & suspenders)
-  window.addEventListener('message', async (ev)=>{
-    try{
+  window.addEventListener('message', async (ev) => {
+    try {
       const d = ev && ev.data;
-      if(!d || d.type!=='PRO_DRAW_ACK') return;
-      console.log('[PRO][content] ACK (message)', d);
-      if(d.ok){
-        const pRoute = (document.getElementById('pro-route')||{}).value||'';
-        const pColor = (document.getElementById('pro-color')||{}).value||'#ff0000';
-        const pWidth = parseInt((document.getElementById('pro-width')||{}).value||'3',10);
-        try{ const _route=(document.getElementById('pro-route')||{}).value||''; const _color=(document.getElementById('pro-color')||{}).value||'#ff0000'; const _width=parseInt((document.getElementById('pro-width')||{}).value||'3',10); window.__PRO_LAST_ROUTE = {route: routeStr, color: color||'#ff0000', width: width||3, t: Date.now()};
-    saveLastRoute(_route,_color,_width); console.log('[PRO][content] saveLastRoute OK (ACK)'); }catch(e){ console.warn('[PRO][content] save (ACK) err', e); }
+      if (!d || d.type !== 'PRO_DRAW_ACK') return;
+      if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][content] ACK (message)', d);
+      if (d.ok) {
+        const pRoute = (document.getElementById('pro-route') || {}).value || '';
+        const pColor = (document.getElementById('pro-color') || {}).value || '#ff0000';
+        const pWidth = parseInt((document.getElementById('pro-width') || {}).value || '3', 10);
+        try {
+          const _route = (document.getElementById('pro-route') || {}).value || '';
+          const _color = (document.getElementById('pro-color') || {}).value || '#ff0000';
+          const _width = parseInt((document.getElementById('pro-width') || {}).value || '3', 10);
+          window.__PRO_LAST_ROUTE = { route: _route, color: _color || '#ff0000', width: _width || 3, t: Date.now() };
+          saveLastRoute(_route, _color, _width);
+          if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][content] saveLastRoute OK (ACK)');
+        } catch (e) {
+          if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][content] save (ACK) err', e);
+        }
       }
-    }catch(e){ /* noop */ }
+    } catch (e) { /* noop */ }
   }, false);
 })();
 
@@ -408,14 +473,20 @@ window.addEventListener('PRO_INJECTED_READY', () => {
       const color = (document.getElementById('pro-color') || {}).value || '#ff0000';
       const width = parseInt((document.getElementById('pro-width') || {}).value || '3', 10);
       // Parse and send to overlay
-      window.drawRouteFromString(routeStr, color, width);
-      // Persist route immediately after drawing
-      if (typeof window.saveLastRoute === 'function') {
-        window.saveLastRoute(routeStr, color, width);
-        if (typeof debugLog === 'function') debugLog('Parse & Draw: Route persisted to sessionStorage');
-      } else {
-        if (typeof debugLog === 'function') debugLog('Parse & Draw: saveLastRoute not available');
-      }
+      window.parseRoute(routeStr, window.getIndexes).then(parsed => {
+        if (!parsed.error) {
+          window.drawRoute(parsed, { color, width });
+          if (typeof window.saveLastRoute === 'function') {
+            window.saveLastRoute(routeStr, color, width);
+            if (typeof debugLog === 'function') debugLog('Parse & Draw: Route persisted to sessionStorage');
+          } else {
+            if (typeof debugLog === 'function') debugLog('Parse & Draw: saveLastRoute not available');
+          }
+        } else {
+          if (typeof setStatus === 'function') setStatus('Route error: ' + (parsed.error || 'Invalid route element'));
+          window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+        }
+      });
     });
   }
   logVersionToStatus();
@@ -448,10 +519,8 @@ if (clearBtn) {
   });
   // Only log if debug is enabled
   const setStatus = t => {
-    if (debugEnabled) {
-      logEl.textContent += t + '\n';
-      logEl.scrollTop = logEl.scrollHeight;
-    }
+    logEl.textContent += t + '\n';
+    logEl.scrollTop = logEl.scrollHeight;
   };
 
   const port=chrome.runtime.connect({name:'PRO_FAA_DIRECT'});

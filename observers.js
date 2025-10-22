@@ -1,4 +1,4 @@
-console.log('[PRO][observers.js] TOP: observers.js script loaded');
+if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][observers.js] TOP: observers.js script loaded');
 // Helper: Wait for both map image and subregion label to match before redraw
 function waitForMapAndSubregion(targetLabel, callback, tries = 0) {
   const img = window.getBetaMapImage ? window.getBetaMapImage() : null;
@@ -18,7 +18,7 @@ function observeImage(img, redrawIfBothReady, hideAndClear) {
   lastImgSrc = img.src;
   redrawIfBothReady();
   imageObserver = new MutationObserver(() => {
-    console.log('[PRO][observers.js] Image change fired');
+      if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][observers.js] Image change fired');
     if (img.src !== lastImgSrc) {
       lastImgSrc = img.src;
       hideAndClear();
@@ -36,33 +36,33 @@ function observeSubregionBtn(btn, redrawIfBothReady, hideAndClear) {
   if (!btn) return;
   // Disconnect any previous observer on this button
   if (btn._proObserver && typeof btn._proObserver.disconnect === 'function') {
-    console.log('[PRO][observers.js] Button Observer disconnected:');
+  if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][observers.js] Button Observer disconnected:');
     btn._proObserver.disconnect();
   }
   let lastLabel = btn.getAttribute('aria-label');
-  proDebugLog('[PRO][content] Attaching MutationObserver to subregion button:', lastLabel);
+  if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][content] Attaching MutationObserver to subregion button:', lastLabel);
   const buttonObserver = new MutationObserver(() => {
-    console.log('[PRO][observers.js] MutationObserver callback fired');
+  if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][observers.js] MutationObserver callback fired');
     const newLabel = btn.getAttribute('aria-label');
     if (newLabel !== lastLabel) {
       lastLabel = newLabel;
       if (typeof proDebugLog === 'function') proDebugLog('[PRO][content] Subregion changed:', newLabel);
-      console.log('[PRO][observers.js] Subregion changed:', newLabel);
+  if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][observers.js] Subregion changed:', newLabel);
       if (window.detectMapArea) {
         const mapArea = window.detectMapArea();
         if (typeof proDebugLog === 'function') proDebugLog('[PRO][observers.js] detectMapArea() returned:', mapArea);
-        console.log('[PRO][observers.js] detectMapArea() returned:', mapArea);
+  if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][observers.js] detectMapArea() returned:', mapArea);
         if (window.updateSidebarInput) {
           if (typeof proDebugLog === 'function') proDebugLog('[PRO][observers.js] Calling updateSidebarInput with:', mapArea);
-          console.log('[PRO][observers.js] Calling updateSidebarInput with:', mapArea);
+          if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][observers.js] Calling updateSidebarInput with:', mapArea);
           window.updateSidebarInput(mapArea);
         } else {
           if (typeof proDebugLog === 'function') proDebugLog('[PRO][observers.js] updateSidebarInput is missing!');
-          console.log('[PRO][observers.js] updateSidebarInput is missing!');
+          if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][observers.js] updateSidebarInput is missing!');
         }
       } else {
         if (typeof proDebugLog === 'function') proDebugLog('[PRO][observers.js] detectMapArea is missing!');
-        console.log('[PRO][observers.js] detectMapArea is missing!');
+          if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][observers.js] detectMapArea is missing!');
       }
       // Wait for both map image and subregion, then redraw
       waitForMapAndSubregion(window.detectMapArea ? window.detectMapArea() : undefined, redrawIfBothReady);
@@ -76,23 +76,23 @@ function observeSubregionBtn(btn, redrawIfBothReady, hideAndClear) {
     characterData: true
   });
   btn._proObserver = buttonObserver;
-  console.log('[PRO][observers.js] Observer attached to button:', 'Initial aria-label:', btn.getAttribute('aria-label'));
+  if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][observers.js] Observer attached to button:', 'Initial aria-label:', btn.getAttribute('aria-label'));
 
   // Immediately update Map Area input in case button is replaced with correct label
   if (window.detectMapArea) {
     const mapArea = window.detectMapArea();
     if (window.updateSidebarInput) {
-      console.log('[PRO][observers.js] Immediate updateSidebarInput with:', mapArea);
+  if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][observers.js] Immediate updateSidebarInput with:', mapArea);
       window.updateSidebarInput(mapArea);
     } else {
-      console.log('[PRO][observers.js] Immediate updateSidebarInput is missing!');
+  if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][observers.js] Immediate updateSidebarInput is missing!');
     }
     // Always trigger redraw after region change to ensure correct line is drawn
     if (typeof redrawIfBothReady === 'function') {
       setTimeout(() => { redrawIfBothReady(); }, 0);
     }
   } else {
-    console.log('[PRO][observers.js] Immediate detectMapArea is missing!');
+  if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][observers.js] Immediate detectMapArea is missing!');
   }
 }
 
@@ -119,18 +119,21 @@ function observeReactContainer() {
           const label = secondButton?.getAttribute('aria-label');
 
           if (label?.startsWith('Zoom:')) {
-            console.log('[PRO] Second Zoom button label:', label);
+            if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO] Second Zoom button label:', label);
             const subregion = label.replace(/^Zoom:\s*/, '');
-            console.log('[PRO] Subregion:', subregion);
+            if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO] Subregion:', subregion);
             // === UI actions for subregion change ===
             // 1. Update Map Area control in extension sub-panel
             if (window.updateSidebarInput && typeof window.detectMapArea === 'function') {
               window.updateSidebarInput(subregion);
-              console.log('[PRO][observers.js] Map Area control updated to:', subregion);
+              if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][observers.js] Map Area control updated to:', subregion);
             }
-            // 2. Force current route line to be cleared
-            window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
-            console.log('[PRO][observers.js] Route line cleared due to subregion change.');
+            // 2. Force current route line to be cleared - note that a model of layer change causes subregion
+            //    update but may not have changed the extent.  Check last drawn maparea to detect change
+            if (window.__PRO_LAST_DRAWN_MAPAREA !== subregion) {
+              window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+              if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][observers.js] Route line cleared due to subregion change.');
+            }
           }
         }
 
@@ -143,32 +146,32 @@ function observeReactContainer() {
 
         if (mapNodes && mapNodes.length) {
           for (const mapNode of mapNodes) {
-            console.log('[PRO] Map container detected:', mapNode);
+            if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO] Map container detected:', mapNode);
             // Find images inside this map container
             const imgs = mapNode.querySelectorAll('img');
             if (imgs.length === 0) {
-              console.log('[PRO] No <img> found in map container.');
+              if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO] No <img> found in map container.');
             } else {
               for (const img of imgs) {
                 if (img.complete) {
-                  console.log('[PRO] Map image loaded:');
+                  if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO] Map image loaded:');
                   // === UI action: draw the appropriate route line for the new subregion ===
                   if (typeof window.redrawIfBothReady === 'function') {
                     setTimeout(() => { window.redrawIfBothReady(); }, 0);
-                    console.log('[PRO][observers.js] redrawIfBothReady called after map image load.');
+                    if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][observers.js] redrawIfBothReady called after map image load.');
                   }
                 } else {
-                  console.log('[PRO] Map image not yet complete:');
+                  if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO] Map image not yet complete:');
                   // Listen for load/error for completeness
                   img.addEventListener('load', () => {
-                    console.log('[PRO] Map image finished loading:');
+                    if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO] Map image finished loading:');
                     if (typeof window.redrawIfBothReady === 'function') {
                       setTimeout(() => { window.redrawIfBothReady(); }, 0);
-                      console.log('[PRO][observers.js] redrawIfBothReady called after map image finished loading.');
+                      if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][observers.js] redrawIfBothReady called after map image finished loading.');
                     }
                   });
                   img.addEventListener('error', () => {
-                    console.warn('[PRO] Map image failed to load:');
+                    if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO] Map image failed to load:');
                   });
                 }
               }
@@ -180,14 +183,14 @@ function observeReactContainer() {
   });
 
   observer.observe(stableParent, { childList: true, subtree: true });
-  console.log('[PRO] Observing for .modelZoom and .mapContainer');
+  if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO] Observing for .modelZoom and .mapContainer');
 }
 
 // Expose globally
 window.observeImage = observeImage;
 window.observeSubregionBtn = observeSubregionBtn;
 window.observeReactContainer = observeReactContainer;
-console.log('[PRO][observers.js] END: observeSubregionBtn attached:', typeof window.observeSubregionBtn);
+if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][observers.js] END: observeSubregionBtn attached:', typeof window.observeSubregionBtn);
 if (window.proDebugLog) window.proDebugLog('[PRO][observers.js] observers.js loaded, observeSubregionBtn attached:', typeof window.observeSubregionBtn);
 // observers.js
 // MutationObserver and event-driven logic for map and subregion changes

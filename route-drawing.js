@@ -175,7 +175,7 @@ function drawRouteFromString(routeStr, color, width, mode) {
       window.drawRoute(parsed, { color, width });
       if (mode === 'restore') {
         // Optionally log or handle restore-specific logic
-        console.log('[PRO][route] drawRouteFromString restore:', routeStr);
+        if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][route] drawRouteFromString restore:', routeStr);
       }
     } else {
       console.warn('[PRO][route] drawRouteFromString parse error:', parsed.error);
