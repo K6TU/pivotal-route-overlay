@@ -1,2 +1,2 @@
 // Central version stamp for PRO extension
-export const PRO_VERSION = '6.1.0';
+window.PRO_VERSION = '6.2.0';

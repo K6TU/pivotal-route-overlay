@@ -34,12 +34,8 @@ async function autoCheckNASR() {
     }
     // Always post status to UI
     const meta = await chrome.storage.local.get(['PRO_META']);
-    // Dynamically import version
-    let version = 'unknown';
-    try {
-      const vmod = await import(chrome.runtime.getURL('version.js'));
-      version = vmod.PRO_VERSION;
-    } catch (e) { LOG('Failed to load version.js:', e); }
+    // Use global version if available
+    let version = typeof self.PRO_VERSION !== 'undefined' ? self.PRO_VERSION : 'unknown';
     post({ phase: 'nasr_status', version, cycleKey: meta.PRO_META && meta.PRO_META.cycleKey, fetchedAt: meta.PRO_META && meta.PRO_META.fetchedAt });
   } catch (e) {
     LOG('NASR auto-check failed:', e);
@@ -273,6 +269,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse)=>{
         const key = 'PRO_LAST_ROUTE_'+tabId;
         await chrome.storage.session.remove(key);
         sendResponse({ok:true});
+        return;
+      }
+      if(msg && msg.cmd==='PRO_CHECK_NASR_NOW'){
+        console.log('[PRO][bg] PRO_CHECK_NASR_NOW received, running autoCheckNASR');
+        try {
+          await autoCheckNASR();
+          sendResponse({ok:true});
+        } catch(e) {
+          sendResponse({ok:false, error: String(e&&e.message||e)});
+        }
         return;
       }
     }catch(e){

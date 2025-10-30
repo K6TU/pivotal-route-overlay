@@ -144,53 +144,6 @@ function attachObservers() {
   const img = window.getBetaMapImage();
   window.observeImage(img, redrawIfBothReady, hideAndClear);
   window.observeReactContainer();
-
-  // Robust polling for subregion button
-  let lastBtn = null;
-    setInterval(() => {
-        const btn = Array.from(document.querySelectorAll('div[class$="_modelZoom"] button[aria-label^="Zoom: "]'))[0];
-        if (btn !== lastBtn) {
-            lastBtn = btn;
-            if (btn) {
-                window.proDebugLog('[PRO][content] Attaching subregion observer to button with aria-label:', btn.getAttribute('aria-label'));
-                // Wait for window.observeSubregionBtn to be defined
-                const tryAttach = (tries = 0) => {
-                    if (typeof window.observeSubregionBtn === 'function') {
-                        if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][content.js] Calling observeSubregionBtn with:', btn, 'aria-label:', btn.getAttribute('aria-label'));
-                        window.observeSubregionBtn(btn, redrawIfBothReady, hideAndClear);
-                        // Immediately trigger redraw since the region may have changed
-                        if (typeof redrawIfBothReady === 'function') {
-                            setTimeout(() => { redrawIfBothReady(); }, 0);
-                        }
-                    } else if (tries < 20) {
-                        setTimeout(() => tryAttach(tries + 1), 100);
-                    } else {
-                        if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][content] ERROR: observeSubregionBtn not available after waiting. Global keys:', Object.keys(window));
-                    }
-                };
-                tryAttach();
-            }
-        }
-    }, 500);
-  // Attach observer to parent of subregion button
-  // const zoomDiv = lastBtn ? lastBtn.closest('div[class$="_modelZoom"]') : document.querySelector('div[class$="_modelZoom"]');
-  const zoomDiv = lastBtn ? lastBtn.closest('div[class$="_toolbarSectionInner"]') : null;
-  if (typeof window.proDebugLog === 'function') window.proDebugLog(zoomDiv);
-
-  if (zoomDiv) {
-    if (window.zoomParentObserver) window.zoomParentObserver.disconnect();
-    window.zoomParentObserver = new MutationObserver(() => {
-      console.log('[PRO][content] Replacement callback fired');
-      // Button may have been replaced, re-attach attribute observer
-      const newBtn = zoomDiv.querySelector('button[aria-label^="Zoom: "]');
-      if (newBtn) {
-        window.proDebugLog('[PRO][content] Attaching subregion observer to button with aria-label:', newBtn.getAttribute('aria-label'));
-        console.log('[PRO][content.js] Calling observeSubregionBtn with:', newBtn, 'aria-label:', newBtn.getAttribute('aria-label'));
-        window.observeSubregionBtn(newBtn, redrawIfBothReady, hideAndClear);
-      }
-    });
-    window.zoomParentObserver.observe(zoomDiv, { childList: true, subtree: true });
-  }
 }
 
 // Delay initial observer attachment and redraw until overlay is ready
@@ -285,18 +238,14 @@ window.addEventListener('PRO_INJECTED_READY', () => {
   }, false);
 })();
 
-// content.js — PRO v5.8.3
+// content.js
 (function(){
   // Debug log function
   function debugLog(...args) { if (debugEnabled) console.log(...args); }
   const log=(...a)=>debugLog('[PRO][content]',...a);
   // Dynamically import version after dialog creation
   const logVersionToStatus = async () => {
-    let proVersion = 'unknown';
-    try {
-      const vmod = await import(chrome.runtime.getURL('version.js'));
-      proVersion = vmod.PRO_VERSION;
-    } catch (e) { debugLog('Failed to load version.js:', e); }
+    let proVersion = typeof window.PRO_VERSION !== 'undefined' ? window.PRO_VERSION : 'unknown';
     // Update toolbar title with version
     const titleEl = document.getElementById('pro-overlay-title');
     if (titleEl) titleEl.textContent = `PRO v${proVersion}`;
@@ -492,12 +441,12 @@ window.addEventListener('PRO_INJECTED_READY', () => {
   logVersionToStatus();
 
   // Attach click handler to Clear button
-const clearBtn = box.querySelector('#pro-clear');
-if (clearBtn) {
-  clearBtn.addEventListener('click', () => {
-    window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
-  });
-}
+    const clearBtn = box.querySelector('#pro-clear');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        window.dispatchEvent(new CustomEvent('PRO_CLEAR_ROUTE'));
+      });
+    }
 
   const logEl=box.querySelector('#pro-log');
   // Debug checkbox logic
@@ -696,4 +645,20 @@ window.addEventListener('PRO_INJECTED_READY', async ()=>{
 })();
 // Close the async IIFE
 
+// Signal a check to the background to check the NASR data for update.
+// This covers the case where the extension was loaded, broswer not restarted,
+// but the cycle update time passed.
 
+if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][content] Sending PRO_CHECK_NASR_NOW message to background');
+try {
+  chrome.runtime.sendMessage({ cmd: 'PRO_CHECK_NASR_NOW' }, (resp) => {
+    if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][content] Received response from background:', resp);
+    if (resp && resp.ok) {
+      if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][content] NASR check triggered successfully');
+    } else {
+      if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][content] NASR check failed', resp && resp.error);
+    }
+  });
+} catch(e) {
+  if (typeof window.proDebugLog === 'function') window.proDebugLog('[PRO][content] NASR check error', e);
+}
