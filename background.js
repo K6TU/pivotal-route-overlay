@@ -7,6 +7,8 @@ let port=null;
 chrome.runtime.onStartup.addListener(()=>{ console.log('[PRO][bg] startup'); });
 chrome.runtime.onInstalled.addListener(()=>{ console.log('[PRO][bg] installed'); });
 
+const PRO_VERSION = '6.2.1';
+
 // Automatic NASR data check/fetch on extension load
 async function autoCheckNASR() {
   try {
@@ -34,8 +36,8 @@ async function autoCheckNASR() {
     }
     // Always post status to UI
     const meta = await chrome.storage.local.get(['PRO_META']);
-    // Use global version if available
-    let version = typeof self.PRO_VERSION !== 'undefined' ? self.PRO_VERSION : 'unknown';
+    // Use hardcoded version
+    let version = PRO_VERSION;
     post({ phase: 'nasr_status', version, cycleKey: meta.PRO_META && meta.PRO_META.cycleKey, fetchedAt: meta.PRO_META && meta.PRO_META.fetchedAt });
   } catch (e) {
     LOG('NASR auto-check failed:', e);
