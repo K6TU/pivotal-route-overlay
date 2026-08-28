@@ -1,0 +1,137 @@
+<meta charset="utf-8"><title>PRO classic-UI fixture</title>
+<style>
+  body { margin:0; font:13px system-ui; background:#ddd }
+  #spacer { height:400px }                     /* so the page can scroll */
+  #results { position:fixed; left:0; bottom:0; width:100%; max-height:45vh; overflow:auto;
+             background:#111; color:#eee; font:12px/1.4 ui-monospace,monospace; padding:8px; z-index:9 }
+</style>
+<div id="spacer"></div>
+<!-- Mirrors the classic model.php page: a plain <img id="display_image"> with an image map that
+     publishes the graticule rect as <area id="click_map_area" coords>. -->
+<a id="zoom_menu_link" href="#">Continental US</a>
+<img id="display_image" width="1100" height="850" usemap="#click_map"
+     src="/test/maps/models/prateptype_cat-imp.conus.png">
+<map name="click_map"><area id="click_map_area" shape="rect" coords="1,47,1099,817" href="#"></map>
+<pre id="results">running…</pre>
+
+<script type="module">
+const out = [];
+const ok = (n, c, extra='') => out.push(`${c ? 'PASS' : 'FAIL'}  ${n}${extra ? '  ' + extra : ''}`);
+const wait = ms => new Promise(r => setTimeout(r, ms));
+async function until(fn, ms = 15000) {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    try { const v = fn(); if (v) return v; } catch (_) {}
+    if (Date.now() > deadline) return false;
+    await wait(100);
+  }
+}
+
+const store = {
+  PRO_AIRPORT_INDEX: {
+    KHWD: { lat: 37.65916, lon: -122.12216 },
+    KDVT: { lat: 33.68828, lon: -112.08286 }
+  },
+  PRO_NAV_INDEX: {}, PRO_FIX_INDEX: {},
+  PRO_META: { cycleKey: '2026-08-06', fetchedAt: 1 },
+  PRO_DEBUG: false
+};
+let sessionRoute = null;
+window.chrome = {
+  runtime: {
+    getURL: p => '/' + p,
+    connect: () => ({ onMessage:{addListener(){}}, onDisconnect:{addListener(){}}, postMessage(){} }),
+    sendMessage: async m => {
+      if (m.cmd === 'PRO_SAVE_LAST_ROUTE') { sessionRoute = m.data; return {ok:true}; }
+      if (m.cmd === 'PRO_LOAD_LAST_ROUTE') return {ok:true, data:sessionRoute};
+      if (m.cmd === 'PRO_CLEAR_LAST_ROUTE') { sessionRoute = null; return {ok:true}; }
+    }
+  },
+  storage: { local: {
+    get: async k => Object.fromEntries((Array.isArray(k)?k:[k]).map(x => [x, store[x]])),
+    set: async o => Object.assign(store, o)
+  } }
+};
+
+const canvas = () => document.getElementById('pro_route_canvas');
+function inkBBox() {
+  const cv = canvas(); if (!cv) return null;
+  const d = cv.getContext('2d').getImageData(0,0,cv.width,cv.height).data;
+  let x0=1e9,y0=1e9,x1=-1,y1=-1;
+  for (let i=3,p=0;i<d.length;i+=4,p++) {
+    if(!d[i]) continue;
+    const x=p%cv.width, y=(p/cv.width)|0;
+    if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y;
+  }
+  return x1<0?null:{x0,y0,x1,y1};
+}
+const near = (a,b,tol=2) => Math.abs(a-b) <= tol;
+
+try {
+  const img = document.getElementById('display_image');
+  await new Promise(r => img.complete ? r() : img.addEventListener('load', r, {once:true}));
+
+  const main = await import('/src/content/main.js');
+  await main.start();
+  await until(() => document.getElementById('pro-overlay-ui'));
+  ok('sidebar is created on the classic UI', !!document.getElementById('pro-overlay-ui'));
+
+  document.getElementById('pro-route').value = 'KHWD KDVT';
+  document.getElementById('pro-draw').click();
+  await until(() => canvas() && inkBBox());
+
+  const cv = canvas();
+  // The classic adapter must win over the beta one even though this page's image URL would also
+  // satisfy the beta selector.
+  ok('classic adapter chosen over beta', cv.parentElement === document.body, cv.parentElement.tagName);
+  ok('canvas positioned absolutely on the document', getComputedStyle(cv).position === 'absolute');
+
+  const ir = img.getBoundingClientRect();
+  ok('canvas sits over the map image',
+     near(parseFloat(cv.style.left), window.scrollX + ir.left) &&
+     near(parseFloat(cv.style.top),  window.scrollY + ir.top) &&
+     near(parseFloat(cv.style.width),  ir.width) &&
+     near(parseFloat(cv.style.height), ir.height),
+     `css ${cv.style.left},${cv.style.top} ${cv.style.width}x${cv.style.height} vs img ${(window.scrollX+ir.left).toFixed(0)},${(window.scrollY+ir.top).toFixed(0)} ${ir.width.toFixed(0)}x${ir.height.toFixed(0)}`);
+
+  const bbox = inkBBox();
+  ok('route drawn at the published graticule', bbox &&
+     near(bbox.x0,117,3) && near(bbox.x1,287,3) && near(bbox.y0,480,3) && near(bbox.y1,560,3),
+     JSON.stringify(bbox));
+
+  // --- the classic adapter must read the graticule live, not use the constant ---
+  // Shift the published rect right and down by 100px; the drawn route must shift with it.
+  document.getElementById('click_map_area').setAttribute('coords', '101,147,1199,917');
+  document.getElementById('pro-draw').click();
+  await until(() => { const b = inkBBox(); return b && b.x0 > bbox.x0 + 50; });
+  const moved = inkBBox();
+  ok('classic reads click_map_area live, not the constant',
+     moved && near(moved.x0 - bbox.x0, 100, 3) && near(moved.y0 - bbox.y0, 100, 3),
+     `shift ${moved ? (moved.x0-bbox.x0)+','+(moved.y0-bbox.y0) : 'none'}`);
+  document.getElementById('click_map_area').setAttribute('coords', '1,47,1099,817');
+  document.getElementById('pro-draw').click();
+  await until(() => { const b = inkBBox(); return b && near(b.x0, bbox.x0, 3); });
+
+  // --- 'document' mode places the canvas in document space, so it must stay aligned with the
+  //     image across a scroll (the position is scroll-invariant, and the scroll handler must not
+  //     drift it). ---
+  window.scrollTo(0, 200);
+  await wait(400);
+  const ir2 = img.getBoundingClientRect();
+  ok('canvas stays aligned with the map across a scroll',
+     near(parseFloat(cv.style.top), window.scrollY + ir2.top) &&
+     near(parseFloat(cv.style.left), window.scrollX + ir2.left),
+     `top ${cv.style.top} vs ${(window.scrollY + ir2.top).toFixed(0)}`);
+  window.scrollTo(0, 0);
+  await wait(300);
+  const ir3 = img.getBoundingClientRect();
+  ok('and after scrolling back', near(parseFloat(cv.style.top), window.scrollY + ir3.top));
+
+  ok('region name comes from the image, not the zoom link',
+     document.getElementById('pro-map-area').value === 'Continental US');
+} catch (e) {
+  ok('exception', false, (e && e.stack) || String(e));
+}
+document.getElementById('results').textContent = out.join('\n');
+window.__RESULTS = out;
+</script>

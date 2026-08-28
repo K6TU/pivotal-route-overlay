@@ -8,9 +8,10 @@ import { DEFAULT_PIXEL_BOUNDS } from '../../common/regions.js';
 export const classicAdapter = {
   id: 'classic',
 
+  // Adapters match on capability alone — the manifest already constrains *where* we run, so
+  // re-checking the hostname here would only add a second place to update and block testing.
   matches() {
-    return /(^|\.)pivotalweather\.com$/.test(location.hostname) &&
-           !!document.getElementById('display_image');
+    return !!document.getElementById('display_image');
   },
 
   getMapImage() {

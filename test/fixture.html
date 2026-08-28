@@ -1,0 +1,212 @@
+<meta charset="utf-8"><title>PRO end-to-end fixture</title>
+<style>
+  body { margin:0; font:13px system-ui; background:#ddd }
+  #results { position:fixed; left:0; bottom:0; width:100%; max-height:45vh; overflow:auto;
+             background:#111; color:#eee; font:12px/1.4 ui-monospace,monospace; padding:8px; z-index:9 }
+  /* Mirrors the Beta UI's structure: an overflow-hidden wrapper around a CSS-transformed
+     component that holds a sizing placeholder image and the real map image on top. */
+  .react-transform-wrapper { overflow:hidden; width:938px; height:500px; margin:20px }
+  .react-transform-component { transform: translate(0px,0px) scale(1); max-width:100%; max-height:100%;
+                               height:auto; aspect-ratio:1.29412/1; cursor:crosshair }
+  .react-transform-component > img:first-child { position:relative; display:block; width:647px }
+  .react-transform-component > img.map { position:absolute; top:0; left:0; max-height:100% }
+</style>
+<div class="react-transform-wrapper"><div class="react-transform-component">
+  <img id="placeholder" width="1100" height="850" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==">
+  <img class="map" id="map" src="/test/maps/models/prateptype_cat-imp.conus.png">
+</div></div>
+<pre id="results">running…</pre>
+
+<script type="module">
+// The map images are locally generated 1100x850 PNGs named the way Pivotal names theirs
+// (<product>.<region>.png), so region changes are deterministic and do not depend on a specific
+// model run still being on Pivotal's CDN. Real-image geometry is verified separately against the
+// live Beta page.
+const out = [];
+const ok = (n, c, extra='') => out.push(`${c ? 'PASS' : 'FAIL'}  ${n}${extra ? '  ' + extra : ''}`);
+const paint = () => document.getElementById('results').textContent = out.join('\n');
+const wait = ms => new Promise(r => setTimeout(r, ms));
+/**
+ * Poll until `fn` is truthy. Background tabs throttle timers to ~1s, so fixed sleeps are flaky;
+ * every step below waits for the condition it actually cares about instead.
+ */
+async function until(fn, ms = 15000) {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    try { const v = fn(); if (v) return v; } catch (_) {}
+    if (Date.now() > deadline) return false;
+    await wait(100);
+  }
+}
+/** Swap the map image the way Pivotal does, and wait for the sidebar to catch up. */
+async function setRegion(slug, settled) {
+  document.getElementById('map').src = `/test/maps/models/prateptype_cat-imp.${slug}.png`;
+  return until(settled);
+}
+
+// --- stub the extension APIs the content modules use ---
+const store = {
+  PRO_AIRPORT_INDEX: {
+    KHWD: { lat: 37.65916, lon: -122.12216, name: 'Hayward Executive' },
+    KDVT: { lat: 33.68828, lon: -112.08286, name: 'Phoenix Deer Valley' },
+    KJFK: { lat: 40.63980, lon: -73.77890, name: 'John F Kennedy Intl' }
+  },
+  PRO_NAV_INDEX: { OAK: { id:'OAK', lat:37.7266, lon:-122.2238 } },
+  PRO_FIX_INDEX: { MODNA: { id:'MODNA', lat:37.0, lon:-120.0 } },
+  PRO_META: { cycleKey: '2026-08-06', fetchedAt: 1, cycleDate: '2026-08-06' },
+  PRO_DEBUG: false
+};
+let sessionRoute = null;
+window.chrome = {
+  runtime: {
+    getURL: p => '/' + p,
+    connect: () => ({ onMessage: { addListener(){} }, onDisconnect: { addListener(){} }, postMessage(){} }),
+    sendMessage: async msg => {
+      if (msg.cmd === 'PRO_SAVE_LAST_ROUTE') { sessionRoute = msg.data; return { ok:true }; }
+      if (msg.cmd === 'PRO_LOAD_LAST_ROUTE') return { ok:true, data: sessionRoute };
+      if (msg.cmd === 'PRO_CLEAR_LAST_ROUTE') { sessionRoute = null; return { ok:true }; }
+    }
+  },
+  storage: {
+    local: {
+      get: async keys => Object.fromEntries((Array.isArray(keys)?keys:[keys]).map(k => [k, store[k]])),
+      set: async o => Object.assign(store, o)
+    }
+  }
+};
+
+/**
+ * Count non-transparent pixels on the overlay canvas — i.e. "did it actually draw?".
+ *
+ * This includes anti-aliasing fringe, and Chrome rasterises a freshly-inserted canvas on a
+ * slightly different path than one that has been on screen for a while, so the count for
+ * identical geometry can vary by ~15%. Assertions below therefore compare direction and
+ * magnitude, never equality; inkBBox() is the check for where the route actually is.
+ */
+function inkedPixels() {
+  const cv = document.getElementById('pro_route_canvas');
+  if (!cv) return -1;
+  const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+  let n = 0;
+  for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++;
+  return n;
+}
+const statusText = () => document.getElementById('pro-log').textContent;
+
+/** Bounding box of the drawn pixels, in natural-image coordinates. */
+function inkBBox() {
+  const cv = document.getElementById('pro_route_canvas');
+  if (!cv) return null;
+  const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+  let x0=1e9,y0=1e9,x1=-1,y1=-1;
+  for (let i=3, p=0; i<d.length; i+=4, p++) {
+    if (!d[i]) continue;
+    const x=p%cv.width, y=(p/cv.width)|0;
+    if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y;
+  }
+  return x1<0 ? null : {x0,y0,x1,y1};
+}
+window.__inkBBox = inkBBox; window.__ink = inkedPixels;
+
+try {
+  await new Promise(r => { const m = document.getElementById('map'); m.complete ? r() : m.addEventListener('load', r, {once:true}); });
+
+  const main = await import('/src/content/main.js');
+  await main.start();
+  await until(() => document.getElementById('pro-overlay-ui'));
+
+  // --- 1. boot ---
+  ok('sidebar is created', !!document.getElementById('pro-overlay-ui'));
+  ok('draw button enabled from cache', !document.getElementById('pro-draw').disabled);
+  ok('map area detected from image URL',
+     document.getElementById('pro-map-area').value === 'Continental US',
+     document.getElementById('pro-map-area').value);
+  ok('no overlay before a route is entered', !document.getElementById('pro_route_canvas') || inkedPixels() === 0);
+
+  // --- 2. draw ---
+  document.getElementById('pro-route').value = 'KHWD KDVT';
+  document.getElementById('pro-draw').click();
+  await until(() => inkedPixels() > 500);
+  const cv = document.getElementById('pro_route_canvas');
+  ok('canvas mounted inside the transform component',
+     !!cv && cv.parentElement.classList.contains('react-transform-component'),
+     cv ? cv.parentElement.className.trim() : 'no canvas');
+  ok('canvas backing store is the natural map size', cv.width === 1100 && cv.height === 850, `${cv.width}x${cv.height}`);
+  const mapRect = document.getElementById('map').getBoundingClientRect(), cvRect = cv.getBoundingClientRect();
+  ok('canvas is coincident with the map image',
+     Math.abs(mapRect.x-cvRect.x)<0.5 && Math.abs(mapRect.y-cvRect.y)<0.5 &&
+     Math.abs(mapRect.width-cvRect.width)<0.5 && Math.abs(mapRect.height-cvRect.height)<0.5,
+     `img ${mapRect.width.toFixed(1)}x${mapRect.height.toFixed(1)} vs cv ${cvRect.width.toFixed(1)}x${cvRect.height.toFixed(1)}`);
+  const inkConus = inkedPixels();
+  const bbox = inkBBox();
+  ok('route is actually drawn', inkConus > 500, `${inkConus} px inked`);
+  // KHWD projects to (117,480) and KDVT to (287,560) in natural-image pixels; the drawn line
+  // must span exactly that, allowing for the 3px stroke width.
+  ok('drawn line spans KHWD to KDVT',
+     bbox && Math.abs(bbox.x0-117)<=3 && Math.abs(bbox.x1-287)<=3 &&
+     Math.abs(bbox.y0-480)<=3 && Math.abs(bbox.y1-560)<=3,
+     JSON.stringify(bbox));
+  ok('route was persisted', sessionRoute && sessionRoute.route === 'KHWD KDVT');
+  ok('waypoints echoed to the log', /KHWD/.test(statusText()) && /KDVT/.test(statusText()));
+
+  // --- 3. hour marks respond to airspeed ---
+  const airspeed = document.getElementById('pro-airspeed');
+  airspeed.value = '120'; airspeed.dispatchEvent(new Event('input'));
+  await until(() => inkedPixels() !== inkConus);
+  const inkSlow = inkedPixels();
+  ok('lower airspeed adds hour marks', inkSlow > inkConus, `${inkConus} -> ${inkSlow} px`);
+  airspeed.value = '310'; airspeed.dispatchEvent(new Event('input'));
+  await until(() => inkedPixels() < inkSlow);
+  ok('restoring airspeed removes the extra marks', inkedPixels() < inkSlow, `${inkSlow} -> ${inkedPixels()} px`);
+
+  // --- 4. region change via the image src, the way Pivotal does it ---
+  await setRegion('us_sw', () => document.getElementById('pro-map-area').value === 'Southwest US');
+  ok('map area follows the new image', document.getElementById('pro-map-area').value === 'Southwest US',
+     document.getElementById('pro-map-area').value);
+  const inkSW = inkedPixels();
+  ok('route redrawn for the new region', inkSW > 100, `${inkSW} px inked`);
+  ok('route is clipped, not identical to conus', inkSW !== inkConus, `conus ${inkConus} vs us_sw ${inkSW}`);
+
+  // --- 5. a region that was previously drawn wrong ---
+  await setRegion('ca_e', () => /outside Eastern Canada/.test(statusText()));
+  ok('Canada region is named, not guessed', document.getElementById('pro-map-area').value === 'Eastern Canada',
+     document.getElementById('pro-map-area').value);
+  ok('route outside Eastern Canada draws nothing', inkedPixels() === 0, `${inkedPixels()} px inked`);
+  ok('and says so', /outside Eastern Canada/.test(statusText()));
+
+  // --- 6. a region Pivotal has not invented yet ---
+  await setRegion('zz_future', () => /not supported/.test(statusText()));
+  ok('unknown region clears the overlay', inkedPixels() === 0);
+  ok('unknown region is reported, not guessed', /not supported/.test(statusText()));
+
+  // --- 7. back to a good region, then bad input, then clear ---
+  await setRegion('conus', () => inkedPixels() > 500);
+  ok('recovers when a supported region returns', inkedPixels() > 500, `${inkedPixels()} px inked`);
+
+  document.getElementById('pro-route').value = 'KHWD ZZZZZ';
+  document.getElementById('pro-draw').click();
+  await until(() => /Route error: ZZZZZ/.test(statusText()));
+  ok('unresolvable token is named in the log', /Route error: ZZZZZ/.test(statusText()));
+  ok('bad route leaves nothing drawn', inkedPixels() === 0);
+
+  document.getElementById('pro-route').value = 'KHWD OAK MODNA KDVT';
+  document.getElementById('pro-draw').click();
+  await until(() => inkedPixels() > 500);
+  ok('VOR and 5-letter fix resolve', inkedPixels() > 500 && /MODNA/.test(statusText()));
+
+  document.getElementById('pro-clear').click();
+  await until(() => inkedPixels() === 0);
+  ok('clear empties the canvas', inkedPixels() === 0);
+  ok('clear drops the persisted route', sessionRoute === null);
+
+  // --- 8. the overlay must not fight the page: no runaway redraw ---
+  const before = inkedPixels();
+  document.body.appendChild(document.createElement('div'));   // unrelated page mutation
+  await wait(1500);                                          // long enough for a stray redraw
+  ok('unrelated DOM churn does not resurrect a cleared route', inkedPixels() === before);
+} catch (e) {
+  ok('exception', false, (e && e.stack || String(e)));
+}
+paint();
+window.__RESULTS = out;
+</script>

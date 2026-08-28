@@ -37,18 +37,28 @@ src/common/            geo.js (projection, clipping, distance), regions.js (map 
 src/content/           loader.js -> main.js; panel, overlay, route, storage
 src/content/adapters/  classic.js / beta.js — everything that depends on Pivotal's markup
 src/background/        service worker: NASR download pipeline and per-tab route storage
-test/selftest.html     module self-test; serve the repo root over HTTP and open it
+test/                  test pages; serve the repo root over HTTP and open test/index.html
 ```
 
 When Pivotal changes their site, `src/content/adapters/` is the only place that should need
 editing. The values in `src/common/regions.js` are harvested from Pivotal's own published page
 state (`pw_web_state.domain`) — see the comment at the top of that file before changing them.
 
-### Running the self-test
+### Running the tests
 
-Serve the repository root over HTTP and open `test/selftest.html`. It imports every module (so it
-catches syntax and link errors) and checks the projection against Pivotal's own
-`map_latlon_to_xy` for all 17 regions.
+Serve the repository root over HTTP (any static server) and open `test/index.html`. There are
+three pages, 61 assertions in total; each prints PASS/FAIL lines in the page.
+
+- `selftest.html` — pure units. Imports every module, so it also catches syntax and link errors.
+  Checks the region table against Pivotal's published bounds and the projection against their own
+  `map_latlon_to_xy` for all 17 regions.
+- `fixture.html` — end-to-end against a replica of the Beta UI's DOM, including its pan/zoom
+  transform container.
+- `fixture-classic.html` — end-to-end against a replica of the classic `model.php` DOM.
+
+The fixtures stub `chrome.storage` and `chrome.runtime` and use locally generated map images named
+the way Pivotal names theirs, so they run offline and do not depend on a particular model run
+still being on Pivotal's CDN.
 
 ## Disclaimer
 

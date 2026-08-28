@@ -33,13 +33,19 @@ let redrawQueued = false;
 
 // --- redraw pipeline ---
 
+/**
+ * Coalesce redraw requests. Deliberately a timeout rather than requestAnimationFrame: rAF is
+ * paused in background tabs, so a Pivotal tab opened in the background would show no sidebar and
+ * no route until it was focused. Drawing into a canvas whose placement is CSS-driven gains
+ * nothing from frame alignment.
+ */
 function scheduleRedraw() {
   if (redrawQueued) return;
   redrawQueued = true;
-  requestAnimationFrame(() => {
+  setTimeout(() => {
     redrawQueued = false;
     redraw().catch(e => warn('main', 'redraw failed', e));
-  });
+  }, 0);
 }
 
 async function redraw() {

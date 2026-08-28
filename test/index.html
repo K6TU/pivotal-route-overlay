@@ -1,0 +1,14 @@
+<meta charset="utf-8"><title>PRO tests</title>
+<style>body{font:15px/1.6 system-ui;margin:40px;max-width:44em}a{display:block;margin:.4em 0}code{background:#eee;padding:1px 5px;border-radius:3px}</style>
+<h1>Pivotal Route Overlay — tests</h1>
+<p>Serve the repository root over HTTP and open these. Each page prints PASS/FAIL lines and
+sets <code>window.__RESULTS</code> when finished.</p>
+<a href="/test/selftest.html">selftest.html</a> — pure units: module linkage, region slugs, the
+region table against Pivotal's published bounds, projection parity with their
+<code>map_latlon_to_xy</code>, clipping, hour marks.
+<a href="/test/fixture.html">fixture.html</a> — end-to-end against a replica of the Beta UI DOM
+(pan/zoom transform container): sidebar, drawing, hour marks, region changes, unsupported regions,
+route errors, persistence.
+<a href="/test/fixture-classic.html">fixture-classic.html</a> — end-to-end against a replica of the
+classic <code>model.php</code> DOM: adapter precedence, document-mode canvas placement, and that
+the graticule is read live from <code>click_map_area</code>.

@@ -30,7 +30,6 @@ function createCanvas() {
   cv.style.pointerEvents = 'none';
   cv.style.position = 'absolute';
   cv.style.zIndex = '1';
-  cv.style.display = 'none';
   return cv;
 }
 
@@ -93,6 +92,8 @@ export function draw(mount, route) {
   const cv = ensureCanvas(mount);
   state.last = route;
 
+  cv.style.display = '';   // undo any previous hide()
+
   const ctx = cv.getContext('2d');
   const { bounds, pixelBounds: px } = route;
   ctx.clearRect(0, 0, cv.width, cv.height);
@@ -125,7 +126,6 @@ export function draw(mount, route) {
     }
   }
 
-  cv.style.display = '';
   log('overlay', 'drew', route.latlngs.length, 'points,', (route.marks || []).length, 'hour marks');
 }
 

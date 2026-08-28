@@ -24,8 +24,7 @@ export const betaAdapter = {
   id: 'beta',
 
   matches() {
-    return /(^|\.)pivotalweather\.com$/.test(location.hostname) &&
-           !!document.querySelector(MAP_IMG_SELECTOR);
+    return !!document.querySelector(MAP_IMG_SELECTOR);
   },
 
   getMapImage() {
