@@ -251,6 +251,18 @@ function connectBackground() {
   return port;
 }
 
+/**
+ * Ask the service worker to re-check the FAA cycle. The worker only checks on startup and
+ * install, so a browser left open across a 28-day boundary would keep stale data.
+ */
+async function requestCycleCheck() {
+  try {
+    await chrome.runtime.sendMessage({ cmd: 'PRO_CHECK_NASR_NOW' });
+  } catch (e) {
+    log('main', 'cycle check request failed', e);
+  }
+}
+
 /** Report what's cached and kick off a fetch if we have nothing to draw with. */
 async function hydrate(port) {
   const st = await chrome.storage.local.get(
@@ -263,6 +275,7 @@ async function hydrate(port) {
     panel.status(`Cache: cycle ${st.PRO_META.cycleKey} | APT ${Object.keys(st.PRO_AIRPORT_INDEX).length}` +
                  ` | NAV ${Object.keys(st.PRO_NAV_INDEX || {}).length}` +
                  ` | FIX ${Object.keys(st.PRO_FIX_INDEX || {}).length}`);
+    requestCycleCheck();   // in the background; the cache we have is usable meanwhile
     return;
   }
 

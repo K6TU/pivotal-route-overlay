@@ -32,7 +32,8 @@ flight plan routes on Pivotal Weather (www.pivotalweather.com) weather maps.
 
 ```
 manifest.json          MV3 manifest
-version.js             single source of truth for the version string
+version.txt            the version; `make update-version` propagates it
+version.js             generated from version.txt — do not edit by hand
 src/common/            geo.js (projection, clipping, distance), regions.js (map bounds), log.js
 src/content/           loader.js -> main.js; panel, overlay, route, storage
 src/content/adapters/  classic.js / beta.js — everything that depends on Pivotal's markup
@@ -59,6 +60,15 @@ three pages, 61 assertions in total; each prints PASS/FAIL lines in the page.
 The fixtures stub `chrome.storage` and `chrome.runtime` and use locally generated map images named
 the way Pivotal names theirs, so they run offline and do not depend on a particular model run
 still being on Pivotal's CDN.
+
+## Releasing
+
+Edit `version.txt`, then:
+
+    make update-version
+
+which rewrites the version in `manifest.json` and `version.js`. `make check-version` verifies the
+three agree.
 
 ## Disclaimer
 
