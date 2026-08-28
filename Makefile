@@ -16,3 +16,36 @@ check-version:
 	@echo "version $(VERSION) is consistent"
 
 .PHONY: update-version check-version
+
+# --- packaging -------------------------------------------------------------
+# Builds a zip containing only what the extension needs to run: the manifest,
+# version.js and src/. Test pages, the Makefile and repo metadata are excluded.
+#
+#   make package        -> pivotal-route-overlay-$(VERSION).zip, wrapped in a
+#                          folder, ready to unzip and "Load unpacked"
+#   make package-store  -> pivotal-route-overlay-$(VERSION)-store.zip, with
+#                          manifest.json at the root, for Web Store upload
+
+NAME    := pivotal-route-overlay
+STAGE   := build/$(NAME)
+SHIP    := manifest.json version.js src LICENSE README
+
+package: check-version
+	@rm -rf build "$(NAME)-$(VERSION).zip"
+	@mkdir -p $(STAGE)
+	@for f in $(SHIP); do cp -R "$$f" $(STAGE)/; done
+	@find build -name '.DS_Store' -delete
+	@cd build && zip -qr "../$(NAME)-$(VERSION).zip" $(NAME)
+	@rm -rf build
+	@echo "built $(NAME)-$(VERSION).zip"
+
+package-store: check-version
+	@rm -rf build "$(NAME)-$(VERSION)-store.zip"
+	@mkdir -p build/root
+	@for f in $(SHIP); do cp -R "$$f" build/root/; done
+	@find build -name '.DS_Store' -delete
+	@cd build/root && zip -qr "../../$(NAME)-$(VERSION)-store.zip" .
+	@rm -rf build
+	@echo "built $(NAME)-$(VERSION)-store.zip"
+
+.PHONY: package package-store

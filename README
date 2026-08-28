@@ -70,6 +70,16 @@ Edit `version.txt`, then:
 which rewrites the version in `manifest.json` and `version.js`. `make check-version` verifies the
 three agree.
 
+To build an installable zip:
+
+    make package          # pivotal-route-overlay-<version>.zip, wrapped in a folder;
+                          # unzip and load the folder via Load unpacked
+    make package-store    # same payload with manifest.json at the zip root,
+                          # for a Chrome Web Store upload
+
+Both contain only `manifest.json`, `version.js` and `src/` (plus LICENSE and this README) — the
+test pages, Makefile and repo metadata are excluded.
+
 ## Disclaimer
 
 This extension is for educational use only. It may contain errors, and must not be used for
