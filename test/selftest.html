@@ -1,0 +1,103 @@
+<meta charset="utf-8"><title>PRO self test</title>
+<pre id="out">running…</pre>
+<script type="module">
+const out = [];
+const ok = (n, c, extra='') => out.push(`${c ? 'PASS' : 'FAIL'}  ${n}${extra ? '  ' + extra : ''}`);
+try {
+  const geo = await import('/src/common/geo.js');
+  const reg = await import('/src/common/regions.js');
+  const adp = await import('/src/content/adapters/index.js');
+  // These three import chrome.* only at call time, so they must at least parse:
+  await import('/src/content/overlay.js');
+  await import('/src/content/route.js');
+  await import('/src/content/storage.js');
+  await import('/src/content/panel.js');
+  await import('/src/content/main.js');
+  await import('/src/background/nasr.js');
+  await import('/src/background/session.js');
+  ok('all modules parse and link', true);
+
+  // --- region slug extraction ---
+  ok('slug beta conus', adp.regionSlugFromSrc('https://cdn.pivotalweather.com/m4o/maps/models/gfs/2026082812/006/prateptype_cat-imp.conus.png') === 'conus');
+  ok('slug beta us_sw', adp.regionSlugFromSrc('https://cdn.pivotalweather.com/m4o/maps/models/gfs/2026082812/006/prateptype_cat-imp.us_sw.png') === 'us_sw');
+  ok('slug classic',    adp.regionSlugFromSrc('https://m5o.pivotalweather.com/maps/models/hrrr/2026082812/006/sfct-imp.conus.png') === 'conus');
+  ok('slug w/ query',   adp.regionSlugFromSrc('https://x/a/b/sfct-imp.us_ne.png?v=2') === 'us_ne');
+  ok('slug empty src',  adp.regionSlugFromSrc('') === '');
+
+  // --- regions table ---
+  // Authoritative values, harvested from pw_web_state.domain on the classic UI (2026-08-28).
+  const TRUTH = {
+    conus:[21,59.01,-129,-64], us_nw:[40,53,-133.13,-110.9], us_sw:[30.367251461988,43.232748538012,-132,-110],
+    us_nr:[39,50,-119.81,-101], us_fc:[31.25,42.25,-118.4,-99.6], us_nc:[39.8,51,-108.55,-89.4],
+    us_c:[32.3,43.8,-108.67,-89], us_sc:[25.75,38.25,-108,-86.62], us_mw:[36.5,47.5,-98.81,-80],
+    us_ov:[31.5,42.5,-96.71,-77.91], us_se:[24.3,36,-95,-75], us_ne:[37,47.6,-84.93,-66.8],
+    us_ma:[31.5,43.5,-89.52,-69], gom:[20.213450292398,32.786549707602,-99.75,-78.25],
+    ca_w:[45.8,63.2,-139.4,-109.646], ca_c:[46,63,-115,-85.93], ca_e:[41,61,-86.5,-52.3]
+  };
+  const bad = Object.entries(TRUTH).filter(([k,[a,b,c,d]]) => {
+    const r = reg.regionBounds(k);
+    return !r || r.latMin!==a || r.latMax!==b || r.lonMin!==c || r.lonMax!==d;
+  }).map(([k]) => k);
+  ok('all 17 regions match Pivotal\'s published bounds', bad.length === 0, bad.join(',') || '');
+  ok('every region is drawable', Object.keys(reg.REGIONS).every(k => !!reg.regionBounds(k)));
+  ok('unknown future slug is not drawable', reg.regionBounds('zz_new') === null);
+  ok('data window covers every region', Object.values(reg.REGIONS).every(r =>
+      r.bounds.latMin >= reg.DATA_BOUNDS.latMin && r.bounds.latMax <= reg.DATA_BOUNDS.latMax &&
+      r.bounds.lonMin >= reg.DATA_BOUNDS.lonMin && r.bounds.lonMax <= reg.DATA_BOUNDS.lonMax));
+  ok('pixel bounds match map_offset + map_size', reg.DEFAULT_PIXEL_BOUNDS.x1===1 &&
+      reg.DEFAULT_PIXEL_BOUNDS.y1===47 && reg.DEFAULT_PIXEL_BOUNDS.x2===1+1098 && reg.DEFAULT_PIXEL_BOUNDS.y2===47+770);
+
+  // --- distance ---
+  const d = geo.haversineNM(37.659, -122.122, 33.688, -112.083);  // KHWD -> KDVT
+  ok('KHWD->KDVT ~ 560 NM', Math.abs(d - 560) < 25, `got ${d.toFixed(1)}`);
+
+  // --- projection: KHWD on the conus render ---
+  const b = reg.regionBounds('conus'), px = reg.DEFAULT_PIXEL_BOUNDS;
+  const p = geo.project(37.659, -122.122, b, px);
+  ok('KHWD projects inside graticule', p.x > px.x1 && p.x < px.x2 && p.y > px.y1 && p.y < px.y2, `(${p.x.toFixed(0)},${p.y.toFixed(0)})`);
+  // KHWD is near the west edge (lon -122 of -129..-64) and mid-height (lat 37.7 of 21..59)
+  ok('KHWD in the left ~15% of the map', (p.x - px.x1) / (px.x2 - px.x1) < 0.15, `fx=${((p.x-px.x1)/(px.x2-px.x1)).toFixed(3)}`);
+  // Parity with Pivotal's own map_latlon_to_xy(), transcribed from the classic UI.
+  const pivotal = (lat, lon, b) => [
+    1098 * ((lon - b.lonMin) / (b.lonMax - b.lonMin)) + 1,
+    47 + 770 - 770 * ((lat - b.latMin) / (b.latMax - b.latMin))
+  ];
+  let maxErr = 0;
+  for (const slug of Object.keys(reg.REGIONS)) {
+    const rb = reg.regionBounds(slug);
+    for (const [lat, lon] of [[rb.latMin, rb.lonMin], [rb.latMax, rb.lonMax], [(rb.latMin+rb.latMax)/2, (rb.lonMin+rb.lonMax)/2]]) {
+      const m = geo.project(lat, lon, rb, px), t = pivotal(lat, lon, rb);
+      maxErr = Math.max(maxErr, Math.abs(m.x - t[0]), Math.abs(m.y - t[1]));
+    }
+  }
+  ok('project() matches Pivotal map_latlon_to_xy across all regions', maxErr < 1e-9, `max err ${maxErr.toExponential(1)} px`);
+  // corners
+  const tl = geo.project(b.latMax, b.lonMin, b, px), br = geo.project(b.latMin, b.lonMax, b, px);
+  ok('NW corner -> graticule top-left', Math.abs(tl.x - px.x1) < 1e-6 && Math.abs(tl.y - px.y1) < 1e-6);
+  ok('SE corner -> graticule bottom-right', Math.abs(br.x - px.x2) < 1e-6 && Math.abs(br.y - px.y2) < 1e-6);
+
+  // --- clipping ---
+  const sw = reg.regionBounds('us_sw');
+  const path = geo.interp([37.659,-122.122],[33.688,-112.083],25);
+  const clippedC = geo.clipPath(path, b);
+  ok('conus keeps whole KHWD-KDVT path', clippedC.length >= 25, `${clippedC.length} pts`);
+  const clippedSW = geo.clipPath(path, sw);
+  ok('us_sw clips the path', clippedSW.length > 1 && clippedSW.every(([la,lo]) =>
+      la <= sw.latMax+1e-9 && la >= sw.latMin-1e-9 && lo >= sw.lonMin-1e-9 && lo <= sw.lonMax+1e-9), `${clippedSW.length} pts`);
+  const away = geo.clipPath(geo.interp([10,-30],[12,-32],10), b);
+  ok('fully-outside path clips to nothing', away.length === 0);
+
+  // --- hour marks ---
+  const marks = geo.marksAlongPath(path, 310);
+  ok('310 kt over ~560 NM -> 1 hour mark', marks.length === 1, `${marks.length}`);
+  ok('120 kt over ~560 NM -> 4 hour marks', geo.marksAlongPath(path, 120).length === 4);
+  // regression: zero-length segments used to hang the mark loop
+  const degenerate = [[37,-122],[37,-122],[37,-122],[33,-112]];
+  ok('duplicate points do not hang mark loop', geo.marksAlongPath(degenerate, 100).length === 5);
+  ok('zero airspeed yields no marks', geo.marksAlongPath(path, 0).length === 0);
+} catch (e) {
+  out.push('FAIL  exception: ' + (e && e.stack || e));
+}
+document.getElementById('out').textContent = out.join('\n');
+window.__RESULTS = out;
+</script>

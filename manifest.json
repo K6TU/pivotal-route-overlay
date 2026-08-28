@@ -1,38 +1,29 @@
 {
   "manifest_version": 3,
   "name": "Pivotal Route Overlay (PRO)",
-  "version": "6.1.0",
+  "version": "7.0.0",
   "description": "Overlay parsed flight routes on Pivotal Weather maps. Fetch FAA NASR and draw routes.",
   "permissions": [
-    "activeTab",
-    "scripting",
     "storage",
     "unlimitedStorage"
   ],
   "host_permissions": [
     "https://www.faa.gov/*",
     "https://nfdc.faa.gov/*",
-    "https://*.pivotalweather.com/*",
-    "https://*.pivotalweather.net/*",
-    "https://beta.pivotalweather.com/models/*"
+    "https://*.pivotalweather.com/*"
   ],
   "background": {
-    "service_worker": "background.js",
+    "service_worker": "src/background/index.js",
     "type": "module"
   },
   "content_scripts": [
     {
       "matches": [
         "https://www.pivotalweather.com/*",
-        "https://beta.pivotalweather.com/models/*"
+        "https://beta.pivotalweather.com/*"
       ],
       "js": [
-        "dom-utils.js",
-        "map-area.js",
-        "route-drawing.js",
-        "sidebar.js",
-        "observers.js",
-        "content.js"
+        "src/content/loader.js"
       ],
       "run_at": "document_end"
     }
@@ -40,11 +31,14 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "injected.js",
-        "version.js"
+        "version.js",
+        "src/common/*.js",
+        "src/content/*.js",
+        "src/content/adapters/*.js"
       ],
       "matches": [
-        "<all_urls>"
+        "https://www.pivotalweather.com/*",
+        "https://beta.pivotalweather.com/*"
       ]
     }
   ]

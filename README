@@ -1,34 +1,56 @@
-
 # Pivotal-Route-Overlay (PRO)
 
-PRO is a Chrome extension (compatible with Brave and other Chromium browsers) that overlays flight plan routes on Pivotal Weather (www.pivotalweather.com) weather maps.
+PRO is a Chrome extension (compatible with Brave and other Chromium browsers) that overlays
+flight plan routes on Pivotal Weather (www.pivotalweather.com) weather maps.
 
 ## Key Features
 
-- **Automatic FAA NASR Data Management**: Automatically fetches and updates the current FAA 28-day NASR datasets (Airports, Navaids, Waypoints). No manual update required.
-- **Version & Data Status Display**: Shows extension version and FAA cycle date in the sidebar.
-- **Map Area Detection**: Sidebar displays the current map region (CONUS, sub-regions, etc.) and clips/scales routes to match map boundaries.
-- **Draggable & Persistent Sidebar**: Sidebar can be dragged and its position is remembered per tab session.
-- **Route Input & Drawing**: Enter a route using airport IDs, VORs, or waypoint names. Click "Parse & Draw" to decode and draw the route over the map.
-- **Airspeed Input & Hour-Marks**: Specify airspeed (knots) to show hour-mark triangles along the route.
-- **Customizable Route Appearance**: Controls for route color and width.
-- **Route Clipping & Scaling**: Route is clipped and scaled to the selected map area using robust algorithms.
-- **Debug Logging**: Enable debug mode to show detailed status and logs in the sidebar.
-- **Per-Tab Airspeed Persistence**: Airspeed value is remembered per tab.
-- **Route Persistence**: Route and appearance are cached and automatically restored on page reloads (including animated loops).
-- **Improved UI Layout**: Controls are aligned and sized for clarity and usability.
+- **Automatic FAA NASR data management**: fetches and updates the current FAA 28-day NASR
+  datasets (Airports, Navaids, Waypoints). No manual update required.
+- **Both Pivotal UIs**: the classic `model.php` interface and the Beta (React) interface, via
+  per-site adapters.
+- **Route input and drawing**: enter a route using ICAO airport ids, FAA location ids (`A/HWD`),
+  VORs or 5-letter waypoints, and PRO decodes and draws it over the map.
+- **Airspeed hour-marks**: triangles along the route at the distance flown each hour.
+- **Region-aware**: the route is clipped and scaled to whichever of Pivotal's 17 map regions is
+  on screen, and follows region changes automatically.
+- **Follows pan and zoom**: on the Beta UI the overlay is mounted inside Pivotal's own transform
+  container, so it tracks panning and zooming and clips at the map edge.
+- **Persistence**: route, colour, width and airspeed are remembered per tab and restored on
+  reload, including through animated loops.
+- **Draggable sidebar** with a debug log toggle.
 
 ## How It Works
 
-1. Load a weather map on Pivotal Weather.
+1. Load a weather map on Pivotal Weather (classic or Beta).
 2. The PRO sidebar appears at the top right.
-3. Enter a route (e.g., `KHWD KDVT`), set airspeed, color, and width as desired.
-4. Click "Parse & Draw" to visualize the route and hour-marks.
-5. Sidebar shows current map area and FAA cycle date. Debug mode can be enabled for troubleshooting.
-6. Route and settings persist across reloads and animated loops.
+3. Enter a route (e.g. `KHWD KDVT`), set airspeed, colour and width.
+4. Click **Parse & Draw** (or press Enter in the route box).
+5. The sidebar shows the current map region and the FAA cycle date.
+
+## Layout
+
+```
+manifest.json          MV3 manifest
+version.js             single source of truth for the version string
+src/common/            geo.js (projection, clipping, distance), regions.js (map bounds), log.js
+src/content/           loader.js -> main.js; panel, overlay, route, storage
+src/content/adapters/  classic.js / beta.js — everything that depends on Pivotal's markup
+src/background/        service worker: NASR download pipeline and per-tab route storage
+test/selftest.html     module self-test; serve the repo root over HTTP and open it
+```
+
+When Pivotal changes their site, `src/content/adapters/` is the only place that should need
+editing. The values in `src/common/regions.js` are harvested from Pivotal's own published page
+state (`pw_web_state.domain`) — see the comment at the top of that file before changing them.
+
+### Running the self-test
+
+Serve the repository root over HTTP and open `test/selftest.html`. It imports every module (so it
+catches syntax and link errors) and checks the projection against Pivotal's own
+`map_latlon_to_xy` for all 17 regions.
 
 ## Disclaimer
 
-This extension is written and enhanced by ChatGPT and tested by a human. It may contain errors. Use at your own risk—this extension is for educational use only and should not be used for flight planning or weather briefing.
-
-
+This extension is for educational use only. It may contain errors, and must not be used for
+flight planning or weather briefing.
