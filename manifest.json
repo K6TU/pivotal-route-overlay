@@ -32,9 +32,7 @@
     {
       "resources": [
         "version.js",
-        "src/common/*.js",
-        "src/content/*.js",
-        "src/content/adapters/*.js"
+        "src/*"
       ],
       "matches": [
         "https://www.pivotalweather.com/*",
